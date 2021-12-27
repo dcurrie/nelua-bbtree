@@ -1,0 +1,166 @@
+
+require 'bitvector'
+require 'nester'
+
+require "math" -- RNG
+
+--require "io"
+--require "string"
+
+-- Customize nester configuration.
+nester.stop_on_fail = false
+
+nester.describe('bitvector', function()
+  nester.before(function(name: string)
+    -- This function is run before every test.
+  end)
+
+  nester.describe('bitvector funs', function() -- Describe blocks can be nested.
+    nester.it('ffslsb 2^N', function()
+      local n: uint64 = 1
+      local i: uint64 = 1
+      while n ~= 0 do
+        local fsb: uint8 = bitvector.ffslsb(n)
+        -- if fsb ~= i then io.printf("ffslsb(%X) -> %u s.b. %u\n", n, fsb, i) end
+        expect.equal(fsb, i)
+        n = n << 1
+        i = i + 1
+      end
+    end)
+
+    nester.it('ffslsb random', function()
+      local function ffslsbslow(n: uint64): uint8
+        local rez: uint8 = 1
+        if n == 0 then return 0 end
+        while n & 1 == 0 do
+          n = n >> 1
+          rez = rez + 1
+        end
+        return rez
+      end
+      expect.equal(ffslsbslow(0), bitvector.ffslsb(0)) -- string.format("ugh 0 %u %u\n", ffslsbslow(0), bitvector.ffslsb(0))
+      math.randomseed(42,356)
+      for i = 1, 1000000 do
+        local n: uint64 = (@uint64)(math.random(0))
+        expect.equal(ffslsbslow(n), bitvector.ffslsb(n)) -- string.format("ugh %x %u %u\n", n, ffslsbslow(n), bitvector.ffslsb(n)))
+      end
+    end)
+
+    nester.it('ffslsb coverage', function()
+      local covx: uint64 = 0
+      for i = 0, 64 do
+        covx = covx | (1_uint64 << bitvector.ffslsb(1_uint64 << i))
+      end
+      expect.equal(covx, 0xFFFFFFFFFFFFFFFF_uint64) -- string.format("covx: %x \n", covx)
+    end)
+
+  end) -- bitvector funs
+
+  nester.describe('mark funs', function()
+
+    nester.it('setbit', function()
+      local bv: span(uint64)
+      local sz: uint32 = 1024
+      bv = default_allocator:xspanrealloc0(bv, sz // 64_uint64)
+      expect.truthy(bitvector.setbit(bv, 42))
+      expect.falsy(bitvector.setbit(bv, 42))
+      expect.truthy(bitvector.setbit(bv, 1000))
+      expect.falsy(bitvector.setbit(bv, 1000))
+      expect.equal(bitvector.firstunmarked(bv, 0), 0)
+      expect.falsy(bitvector.setbit(bv, 0))
+      expect.equal(bitvector.firstunmarked(bv, 42), 1) -- first zero bit in word 0
+      expect.truthy(bitvector.setbit(bv, 960))
+      expect.equal(bitvector.firstunmarked(bv, 960), 961) -- first zero bit in word 960/64=15
+      expect.falsy(bitvector.setbit(bv, 960))
+      expect.falsy(bitvector.setbit(bv, 961))
+    end)
+
+  end) -- mark funs
+
+end)
+
+nester.report() -- Print overall statistic of the tests run.
+nester.exit() -- Exit with success if all tests passed.
+
+
+-- to generate: nelua -DBITVECTOR_GEN bitvector-test.nelua
+
+##if BITVECTOR_GEN then
+
+local n: uint64 = 1
+local i: uint64 = 1
+while n ~= 0 do
+  print(ctz(n), i, n) -- before lookup in table
+  n = n << 1
+  i = i + 1
+end
+
+## end
+
+--[[
+
+0	1	1
+1	2	2
+2	3	4
+4	4	8
+8	5	16
+17	6	32
+34	7	64
+5	8	128
+11	9	256
+23	10	512
+47	11	1024
+31	12	2048
+63	13	4096
+62	14	8192
+61	15	16384
+59	16	32768
+55	17	65536
+46	18	131072
+29	19	262144
+58	20	524288
+53	21	1048576
+43	22	2097152
+22	23	4194304
+44	24	8388608
+24	25	16777216
+49	26	33554432
+35	27	67108864
+7	28	134217728
+15	29	268435456
+30	30	536870912
+60	31	1073741824
+57	32	2147483648
+51	33	4294967296
+38	34	8589934592
+12	35	17179869184
+25	36	34359738368
+50	37	68719476736
+36	38	137438953472
+9	39	274877906944
+18	40	549755813888
+37	41	1099511627776
+10	42	2199023255552
+21	43	4398046511104
+42	44	8796093022208
+20	45	17592186044416
+41	46	35184372088832
+19	47	70368744177664
+39	48	140737488355328
+14	49	281474976710656
+28	50	562949953421312
+56	51	1125899906842624
+48	52	2251799813685248
+33	53	4503599627370496
+3	54	9007199254740992
+6	55	18014398509481984
+13	56	36028797018963968
+27	57	72057594037927936
+54	58	144115188075855872
+45	59	288230376151711744
+26	60	576460752303423488
+52	61	1152921504606846976
+40	62	2305843009213693952
+16	63	4611686018427387904
+32	64	9223372036854775808
+]]

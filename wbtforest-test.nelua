@@ -1,0 +1,44 @@
+require 'wbtforest'
+require 'nester'
+
+-- Customize nester configuration.
+nester.stop_on_fail = false
+
+nester.describe('wbtforest', function()
+  nester.before(function(name: string)
+    -- This function is run before every test.
+  end)
+
+  nester.describe('wbtforest funs', function() -- Describe blocks can be nested.
+    nester.it('instanciating', function()
+      local forest: wbtforest(integer, integer)
+      expect.equal(#forest, 0) -- creates doubly linked list
+      expect.equal(#forest, 0) -- uses doubly linked list
+    end)
+
+    nester.it('instanciating', function()
+      local forest: wbtforest(integer, integer)
+      expect.equal(#forest, 1) -- Fail.
+    end)
+  end)
+end)
+
+nester.report() -- Print overall statistic of the tests run.
+nester.exit() -- Exit with success if all tests passed.
+
+
+  --[[
+  assert(map:find_(0)==nilptr)
+  local p: *integer = map:insert_(42)
+  assert(p ~= nilptr)
+  $p = -42
+  p = map:find_(42)
+  assert(p ~= nilptr)
+  assert($p == -42)
+  ##if WBTMAP_UNITTEST then
+    assert(map:isbalanced())
+    io.printf("Balanced!\n")
+  ##end
+  map:destroy()
+  ]]
+

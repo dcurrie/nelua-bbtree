@@ -1,0 +1,576 @@
+--[[
+The wbtforest library provides a generic implementation of
+Weight Balanced Trees a.k.a. Bounded Balance Trees or BB[α] Trees
+in a memory managed forest of trees of the same type.
+
+References:
+
+Implementing Sets Efficiently in a Functional Language
+Stephen Adams
+CSTR 92-10
+Department of Electronics and Computer Science University of Southampton Southampton S09 5NH
+
+Adams’ Trees Revisited Correct and Efficient Implementation
+Milan Straka <fox@ucw.cz>
+Department of Applied Mathematics Charles University in Prague, Czech Republic
+
+Nelua implementation:
+
+wbtforest provides a generic (parameterized) collection of key,value maps
+using a persistent data structure; here persistent means that maps are never
+modified, all operations return a new map that may share structure with other
+maps in the same forest. When the space allocated to the forest is exhausted,
+the space is automatically garbage collected (even when the Nelua program has
+no garbage collector, -Pnogc), and may grow if it becomes too full. Nodes are
+not scavenged until a tree root is destroyed by the caller of the library.
+
+Features:
+
+* Insert (``add``), lookup (``get``), and delete (``del``) in O(log(N)) time
+* Key-ordered iterators (``inorder`` and ``revorder``)
+* Lookup by relative position from beginning or end (``getNth``) in O(log(N)) time
+* Get the position (``rank``) by key in O(log(N)) time
+* Efficient set operations using tree keys
+* ? Map extensions to set operations with optional value merge control for duplicates
+]]
+
+--[[
+Copyright (c) 2012-2021 Doug Currie, Londonderry, NH, USA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+and associated documentation files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+]]
+
+-- 2021-12-21 e
+
+--[[
+Design: wbtforest has span of tree nodes, a mark/free bitarray, a bump allocation index, and a
+list of wbttree root records. All node "pointers" are indexes into the span of tree nodes.
+
+The GC is non-moving; this allows wbt functions to hold node indexes into the node span across
+GC calls, which may occur during allocations when space is exhausted within the function. A
+separate compactor is provided that may be called at top level. The GC uses a bit span to hold
+mark bits. This provides some cache locality for searching for free nodes during the sweep.
+Option: eliminate the free list and use the mark bits alone?
+
+The data structures are not protected with locks, and assume single threaded behavior; this is
+consistent with other Nelua libraries.
+
+To make this work with or without GC, we need to make the list (set? hashmap?) of tree roots
+weak... but there are no weak tables yet!?
+
+Discord: Does Nelua have any support or plan to support weak pointers in its GC? Searching the
+documentation, source code, and Discord for "weak" brings no joy. ;-)  The library I'm
+working on needs a "weak set" data structure to support use in both GC mode and no-GC mode.
+Weakset could be implemented using a Lua table with a `{__mode = "k"}` metatable, but I'd be
+really happy with a nelua weakset or weakhashmap, or even a weak doubly-linked-list. The only
+operations I need are insert (`__atindex`), `remove`, and an iterator like `__pairs`.
+
+Workaround: Keep the list of roots in the forest data structure, but return a wbt-token that
+points to an entry in the list of roots. When the wbt-token is GC'd or `destroy`ed the `__gc`
+metamethod deletes the entry from the list.
+]]
+
+--[[
+I considered marking based on (Deutsch-)Schorr-Waite DFS, but since the algorithms use
+recursion on trees, there is no big advantage to stackless marking relative to the stack
+used by the primary algorithms. The stack depth is the same as the tree height, proportional
+to the log base 2 of the tree size.
+]]
+
+require "bitvector"
+
+-- Constant used to enable unit test
+## WBTFOREST_UNITTEST = true
+
+##if WBTFOREST_UNITTEST then
+require 'io'
+##end
+
+local OMEGA: uint32 <comptime> = 3
+local ALPHA: uint32 <comptime> = 2
+
+-- Initial node capacity to reserve when inserting an element for the first time in wbt.
+local INIT_CAPACITY: uint32 <comptime> = 64
+
+-- Marker for nil nodes; to test we use node < bump; whereas (node ~= WBTNIL) is tempting,
+-- it fails the "zero is initialization" precept; WBTNIL is always greater than bump
+local WBTNIL: uint32 <comptime> = (@uint32)(-1)
+
+-- Maximum load factor (used nodes per forest) in percent.
+-- The container automatically increases the number of nodes if the load factor exceeds this threshold.
+local MAX_LOAD_FACTOR: usize <comptime> = 85
+
+
+## local function make_wbtforestT(K, V, CompareFunc, Allocator)
+  ## static_assert(traits.is_type(K), "invalid type '%s'", K)
+  ## static_assert(traits.is_type(V), "invalid type '%s'", V)
+  ## if not Allocator then
+  require 'allocators.default'
+  ## Allocator = DefaultAllocator
+  ## end
+  -- https://discord.com/channels/680417078959800322/887388302938886144/922479556621897739
+  ## if not CompareFunc then
+    ## function CompareFunc(a, b)
+      in #[a]# < #[b]#
+    ## end
+  ## elseif CompareFunc.is_generic then
+    ## CompareFunc = CompareFunc.func
+  ## end
+
+  local Allocator: type = #[Allocator]#
+  local K: type = @#[K]#
+  local V: type = @#[V]#
+
+  -- wbt map node record defined when inserting into a `wbtmap`.
+  local wbtnodeT: type <nickname(#[string.format('wbtmapnode(%s, %s)',K,V)]#)> = @record{
+    lhs: uint32, -- index into span nodes
+    rhs: uint32, -- index into span nodes
+    siz: uint32,
+    key: K,
+    val: V
+  }
+
+  -- wbt map record defined when calling `wbtforest:make`.
+  local wbtrootT: type <nickname(#[string.format('wbtroot(%s, %s)',K,V)]#)> = @record{
+    prev: *wbtrootT, -- prev map in linked list of maps
+    next: *wbtrootT, -- next map in linked list of maps
+    root: uint32            -- index into span nodes, root of wbtree, WBTNIL for empty tree
+  }
+
+  -- we make an indirect reference to the wbtrootT.root to support GC in lieu of weak sets
+  -- wbt map record defined when calling `wbtforest:make`.
+  local wbtmapT: type <nickname(#[string.format('wbtmap(%s, %s)',K,V)]#)> = @record{
+    root: *wbtrootT      -- indirection to tree root
+  }
+
+  -- wbt map record defined when instantiating the generic `wbtmap`.
+  local wbtforestT: type <nickname(#[string.format('wbtforest(%s, %s)',K,V)]#)> = @record{
+    roots: wbtrootT, -- sentinel in list of roots
+    bumpa: uint32,   -- index into span nodes, bump allocator, full when bump == #nodes
+    rover: uint32,   -- index into marks, the last free (unmarked) node allocated
+    nodes: span(wbtnodeT),
+    marks: span(uint64), -- mark bits
+    allocator: Allocator
+  }
+
+  -- we make an indirect reference to the wbtrootT to support GC in lieu of weak sets
+  -- wbt map record defined when calling `wbtforest:make`.
+  local wbtmapT: type <nickname(#[string.format('wbtmap(%s, %s)',K,V)]#)> = @record{
+    root: *wbtrootT,    -- indirection to tree root
+    forest: *wbtforestT -- my forest
+  }
+
+  ##[[
+  local wbtmapT = wbtmapT.value
+  wbtmapT.is_container = true
+  wbtmapT.K = K
+  wbtmapT.V = V
+  local wbtforestT = wbtforestT.value
+  wbtforestT.is_container = true
+  wbtforestT.K = K
+  wbtforestT.V = V
+  ]]
+
+  --[[
+  Creates a wbt forest using a custom allocator instance.
+  Useful only when using instanced allocators.
+
+  e: this is copied from heapmap.nelua and I'm not sure it's useful
+  ]]
+  function wbtforestT.make(allocator: Allocator): wbtforestT
+    local m: wbtforestT
+    m.allocator = allocator
+    return m
+  end
+
+  --[[
+  Resets the container to a zeroed state, freeing all used resources.
+
+  *Complexity*: O(1).
+  ]]
+  function wbtmapT:destroy(): void
+    local iroot: *wbtrootT = self.root
+    if iroot ~= WBTNIL then
+      -- TODO unlink from list
+      iroot.root = WBTNIL
+    end
+  end
+
+  -- Effectively the same as `destroy`, called when a to-be-closed variable goes out of scope.
+  function wbtmapT:__close(): void
+    self:destroy()
+  end
+
+  -- Effectively the same as `destroy`, called when record id garbage collected.
+  function wbtmapT:__gc(): void
+    self:destroy()
+  end
+
+  --[[
+  Resets the container to a zeroed state, freeing all used resources.
+
+  *Complexity*: O(1). -- TODO
+  ]]
+  function wbtforestT:destroy(): void
+    self.allocator:spandealloc(self.nodes)
+    self.nodes = (@span(wbtnodeT))()
+    self.bumpa = 0
+    self.rover = 0
+    -- TODO - can we delete the roots? It may leave dangling pointers for some wbtmapT records.
+  end
+
+  -- Effectively the same as `destroy`, called when a to-be-closed variable goes out of scope.
+  function wbtforestT:__close(): void
+    self:destroy()
+  end
+
+  --[[
+  Remove all elements from the container.
+  The internal storage buffers are not freed, and they may be reused.
+
+  *Complexity*: O(n).
+
+  -- TODO is this even possible without leaving dangling pointers?
+
+  function wbtforestT:clear(): void
+    memory.spanzero(self.nodes)
+    -- TODO close all roots; dangling pointers!? self.root = WBTNIL
+    self.bump = 0
+  end
+  ]]
+
+  -- Returns the number of elements in the container, in this case the number of roots.
+  function wbtforestT:__len(): isize
+    local size: isize = 0
+    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
+      -- make doubly linked list
+      self.roots.prev = &self.roots
+      self.roots.next = &self.roots
+      self.roots.root = WBTNIL
+    else
+      local rover: *wbtrootT = self.roots.next
+      while rover ~= &self.roots do
+        size = size + 1
+        rover = rover.next
+      end
+    end
+    return size
+  end
+
+  -- internal function to try to get a free node using mark bits
+  -- basically it's a piece of the sweep phase of the GC
+  -- returns WBTNIL if there are no free nodes below self.bumpa
+  function wbtforestT:firstfree(): uint32
+    local node: uint32 = WBTNIL
+    if self.rover < self.bumpa then
+      -- try to get a free node
+      node = bitvector.firstunmarked(self.marks, self.rover)
+      self.rover = node -- ok if WBTNIL since it's > self.bumpa
+      -- if return from firstunmarked is == bumpa, we transitioned to bump phase
+      -- increment bumpa if so
+      if node == self.bumpa then
+        self.bumpa = node + 1
+      end
+    end
+    return node
+  end
+
+  -- internal function to mark a subtree; returns count of new marks
+  function wbtforestT:mark(node: uint32): uint32
+    local used: uint32 = 0
+    if bitvector.setbit(self.marks, node) then
+      used = 1_uint32
+      used = used + self:mark(self.nodes[node].lhs)
+      used = used + self:mark(self.nodes[node].rhs)
+    end
+    return used
+  end
+
+  -- internal function to mark all roots; returns count of marks
+  function wbtforestT:markallroots(): uint32
+    local used: uint32 = 0
+    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
+      -- make doubly linked list
+      self.roots.prev = &self.roots
+      self.roots.next = &self.roots
+      self.roots.root = WBTNIL
+    else
+      local rover: *wbtrootT = self.roots.next
+      while rover ~= &self.roots do
+        used = used + self:mark(rover.root)
+        rover = rover.next
+      end
+    end
+    return used
+  end
+
+  -- internal function to perform the mark phase of the GC setting the mark bits
+  -- it may grow the nodes span if an insufficent number of nodes are free
+  -- always returns a free node index
+  function wbtforestT:markandalloc(): uint32
+    local node: uint32 = WBTNIL
+    bitvector.clearall(self.marks) -- zero the bitvector
+    local used: uint32 = self:markallroots() -- GC mark phase
+    -- used/#nodes > 85/100 == 100 * used > 85 * #nodes
+    -- note that using >= makes zero size forest pass the test
+    if (100 * used) >= (MAX_LOAD_FACTOR * #self.nodes) then
+      -- need to grow
+      local newsize: uint32 = #self.nodes * 2
+      if unlikely(newsize == 0) then
+        -- need to allocate for the first time
+        newsize = INIT_CAPACITY
+      end
+      self.nodes = self.allocator:xspanrealloc0(self.nodes, newsize)
+      self.marks = self.allocator:xspanrealloc0(self.marks, newsize // 64_uint64)
+    end
+    -- more TODO!
+    return node
+  end
+
+  function wbtforestT:nodealloc(k: K, v: V): uint32
+    local node: uint32 = self:firstfree()
+    if node == WBTNIL then
+      if self.bumpa < #self.nodes then
+        -- bump alloc
+        node = self.bumpa
+        self.bumpa = node + 1
+      else
+        assert(self.bumpa == #self.nodes)
+        node = self:markandalloc()
+      end
+    end
+    self.nodes[node].lhs = WBTNIL
+    self.nodes[node].rhs = WBTNIL
+    self.nodes[node].siz = 1
+    self.nodes[node].key = k
+    self.nodes[node].val = v
+    return node
+  end
+
+
+  -- TODO
+
+--  function wbtmapT:find_(k: K): *V
+--    local node: uint32 = self.root
+--    local bump: uint32 = self.bump
+--    while node < bump do
+--      if #[CompareFunc]#(k, self.nodes[node].key) then
+--        node = self.nodes[node].l
+--      elseif #[CompareFunc]#(self.nodes[node].key, k) then
+--        node = self.nodes[node].r
+--      else
+--        return &self.nodes[node].val
+--      end
+--    end
+--    return nilptr
+--  end
+--
+--  function wbtmapT:nodealloc(k: K, v: V): uint32
+--    local node: uint32 = 0
+--    if self.free < self.bump then
+--      -- pull from free list
+--      node = self.free
+--      self.free = self.nodes[node].l
+--    elseif self.bump < #self.nodes then
+--      -- bump alloc
+--      node = self.bump
+--      self.bump = node + 1
+--    else
+--      assert(self.bump == #self.nodes)
+--      assert(self.free == WBTNIL or (self.free == 0 and self.bump == 0))
+--      self.free = WBTNIL -- in case this is the first time to grow
+--      -- must grow
+--      local newsize: uint32 = #self.nodes * 2
+--      if unlikely(newsize == 0) then
+--        newsize = INIT_CAPACITY
+--      end
+--      self.nodes = self.allocator:xspanrealloc0(self.nodes, newsize)
+--      node = self.bump
+--      self.bump = node + 1
+--    end
+--    self.nodes[node].l = WBTNIL
+--    self.nodes[node].r = WBTNIL
+--    self.nodes[node].siz = 1
+--    self.nodes[node].key = k
+--    self.nodes[node].val = v
+--    return node
+--  end
+--
+--  function wbtmapT:nodesize_(node: uint32): uint32 <inline>
+--    if node < self.bump then
+--      return self.nodes[node].siz
+--    else
+--      return 0
+--    end
+--  end
+--
+--  function wbtmapT:noderesize_(node: uint32): void <inline>
+--    self.nodes[node].siz =
+--      self:nodesize_(self.nodes[node].l) + 1 + self:nodesize_(self.nodes[node].r)
+--  end
+--
+--  function wbtmapT:rotl(node: uint32): uint32
+--    local temp: uint32 = node
+--    node = self.nodes[node].r
+--    self.nodes[temp].r = self.nodes[node].l
+--    self.nodes[node].l = temp
+--    self.nodes[node].siz = self.nodes[temp].siz
+--    self:noderesize_(temp)
+--    return node
+--  end
+--
+--  function wbtmapT:rotr(node: uint32): uint32
+--    local temp: uint32 = node
+--    node = self.nodes[node].l
+--    self.nodes[temp].l = self.nodes[node].r
+--    self.nodes[node].r = temp
+--    self.nodes[node].siz = self.nodes[temp].siz
+--    self:noderesize_(temp)
+--    return node
+--  end
+--
+--  function wbtmapT:balance(node: uint32): uint32
+--    if node == WBTNIL then return node end
+--    local sl: uint32 = self:nodesize_(self.nodes[node].l)
+--    local sr: uint32 = self:nodesize_(self.nodes[node].r)
+--    if (sl + sr) <= 1 then
+--      -- nothing to do
+--    elseif sr > (OMEGA * sl) then
+--      -- right subtree too heavy
+--      local nr: uint32 = self.nodes[node].r
+--      assert(nr ~= WBTNIL)
+--      if self:nodesize_(self.nodes[nr].l) < (ALPHA * self:nodesize_(self.nodes[nr].r)) then
+--        node = self:rotl(node)
+--      else
+--        self.nodes[node].r = self:rotr(self.nodes[node].r)
+--        node = self:rotl(node)
+--      end
+--    elseif sl > (OMEGA * sr) then
+--      -- left subtree too heavy
+--      local nl: uint32 = self.nodes[node].l
+--      assert(nl ~= WBTNIL)
+--      if self:nodesize_(self.nodes[nl].r) < (ALPHA * self:nodesize_(self.nodes[nl].l)) then
+--          node = self:rotr(node)
+--      else
+--        self.nodes[node].l = self:rotl(self.nodes[node].l)
+--        node = self:rotr(node)
+--      end
+--    else
+--      -- nothing to do
+--    end
+--    return node
+--  end
+--
+--  -- Internal function to enable an insert, or replace if key k already present;
+--  -- returns pointer to inserted or found value slot
+--  function wbtmapT:insert__(k: K, node: uint32): (uint32, *V)
+--    if node >= self.bump then
+--      -- empty node, so alloc one
+--      node = self:nodealloc(k, (@V)())
+--      return node, &self.nodes[node].val
+--    elseif #[CompareFunc]#(k, self.nodes[node].key) then
+--      local newroot: uint32, vptr: *V = self:insert__(k, self.nodes[node].l)
+--      self.nodes[node].l = newroot
+--      self:noderesize_(node)
+--      return self:balance(node), vptr
+--    elseif #[CompareFunc]#(self.nodes[node].key, k) then
+--      local newroot: uint32, vptr: *V = self:insert__(k, self.nodes[node].r)
+--      self.nodes[node].r = newroot
+--      self:noderesize_(node)
+--      return self:balance(node), vptr
+--    else
+--      return node, &self.nodes[node].val
+--    end
+--  end
+--  function wbtmapT:insert_(k: K): *V
+--    local newroot: uint32, vptr: *V = self:insert__(k, self.root)
+--    self.root = newroot
+--    return vptr
+--  end
+--
+--  -- Returns the number of elements in the container.
+--  function wbtmapT:__len(): isize
+--    local size: isize = 0
+--    local root: uint32 = self.root
+--    if root < self.bump then -- (root ~= WBTNIL) is tempting, but fails "zero is initialization" precept
+--      size = self.nodes[root].siz
+--    end
+--    return size
+--  end
+--
+--  ##if WBTFOREST_UNITTEST then
+--
+--  function wbtmapT:balanced_(node: uint32): isize
+--    if node == WBTNIL then return 0 end
+--    local sl: uint32 = self:nodesize_(self.nodes[node].l)
+--    local sr: uint32 = self:nodesize_(self.nodes[node].r)
+--    local sz: uint32 = self:nodesize_(node)
+--    if (sl + 1 + sr) ~= sz then
+--      io.printf("Error in wbtmap balanced: %u != %u + 1 + %u; (%u %u)\n", sz, sl, sr, self.nodes[node].l, self.nodes[node].r)
+--      return -1
+--    end
+--    if (sl + sr) <= 1 then
+--      -- balanced
+--    elseif sr > (OMEGA * sl) then
+--      io.printf("Error in wbtmap balanced: sr %u > omega * %u\n", sr, sl)
+--      return -1
+--    elseif sl > (OMEGA * sr) then
+--      io.printf("Error in wbtmap balanced: sl %u > omega * %u\n", sl, sr)
+--      return -1
+--    end
+--    local slb: isize = self:balanced_(self.nodes[node].l)
+--    local srb: isize = self:balanced_(self.nodes[node].r)
+--    if (slb < 0) or (sl ~= slb) then
+--      if (slb >= 0) then io.printf("Error in wbtmap balanced: sl %u != %lld\n", sl, slb) end
+--      return -1
+--    end
+--    if (srb < 0) or (sr ~= srb) then
+--      if (srb >= 0) then io.printf("Error in wbtmap balanced:  sr %u != %lld\n", sr, srb) end
+--      return -1
+--    end
+--    return sz
+--  end
+--
+--  -- Unit test function returns `true` if the tree is balanced which should always be true
+--  function wbtmapT:isbalanced(): boolean
+--    local sz: isize = self:balanced_(self.root)
+--    if self.root < self.bump then
+--      return (sz > 0) and (sz == self:nodesize_(self.root))
+--    else
+--      return (sz == 0)
+--    end
+--  end
+--
+--  ##end
+
+  ## return wbtforestT
+## end
+
+--[[
+Generic used to instantiate a wbt map type in the form of `wbtforest(K, V, CompareFunc, Allocator)`.
+
+Argument `K` is the key type for the wbt maps within the forest.
+Argument `V` is the value type for the wbt maps within the forest.
+Argument `CompareFunc` is a function to compare two keys in the sense of __lt,
+in case absent then `__lt` is used.
+Argument `Allocator` is an allocator type for the container storage,
+in case absent then then `DefaultAllocator` is used.
+]]
+global wbtforest: type = #[generalize(make_wbtforestT)]#
+
+return wbtforest
+
+

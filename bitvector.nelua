@@ -1,0 +1,70 @@
+--[[ bitvector functions for wbtforest.nelua
+]]
+
+require "span"
+require "memory"
+-- require "io" -- debug
+
+-- Namespace for bitvector module.
+global bitvector: type = @record{}
+
+function bitvector.clearall(bitvec: span(uint64)): void
+  memory.zero(&bitvec[0], #bitvec * 8)
+end
+
+-- returns true to indicate a transition from clear to set
+-- if already set, returns false
+function bitvector.setbit(bitvec: span(uint64), idx: uint32): boolean
+  local widx: uint32 = idx // 64_uint32
+  local bidx: uint32 = idx  & 63_uint32
+  local word: uint64 = bitvec[widx]
+  local mask: uint64 = 1_uint64 << bidx
+  if (word & mask) == 0 then
+    bitvec[widx] = word | mask
+    return true
+  else
+    return false
+  end
+end
+
+local MultiplyDeBruijnBitPosition: [64]uint8 =
+  {1, 2, 3, 54, 4, 8, 55, 28, 5, 39, 42, 9, 35, 56, 49, 29,
+   63, 6, 40, 47, 45, 43, 23, 10, 25, 36, 60, 57, 50, 19, 30, 12,
+   64, 53, 7, 27, 38, 41, 34, 48, 62, 46, 44, 22, 24, 59, 18, 11,
+   52, 26, 37, 33, 61, 21, 58, 17, 51, 32, 20, 16, 31, 15, 14, 13}
+
+-- internal funtion, returns the 1-based first set (LSB) bit; 0 -> no set bits
+local function ffslsb(n: uint64): uint8 <inline>
+  if n == 0 then return 0 end
+  -- 0x022fdd63cc95386d is a de Bruijn Sequence B(2 6)
+  local idx: uint8 = (@uint8)(((n & -n) * 0x022fdd63cc95386d) >> 58)
+  return MultiplyDeBruijnBitPosition[idx]
+end
+
+-- for unit testing
+function bitvector.ffslsb(n: uint64): uint8
+  return ffslsb(n)
+end
+
+-- find first zero bit starting at rover; also marks this position
+-- if none found, return uint32.max
+function bitvector.firstunmarked(bitvec: span(uint64), rover: uint32): uint32
+  local widx: uint32 = rover // 64_uint32
+  local bidx: uint32 = rover  & 63_uint32
+  while widx < #bitvec do
+    local word: uint64 = bitvec[widx]
+    local lsbf: uint8  = ffslsb(~word)
+    if lsbf ~= 0 then
+        -- not true when called with 0 for the first time and no marks!
+        -- check(bidx < lsbf or widx ~= (rover // 64_uint32), "Error in mask bits")
+        local mask = 1_uint64 << (lsbf - 1)
+        bitvec[widx] = word | mask
+        --io.printf("Word %u is 0x%x\n", widx, bitvec[widx])
+        return (widx * 64_uint32) + (lsbf - 1)
+    end
+    widx = widx + 1
+  end
+  return (@uint32)(-1)
+end
+
+return bitvector
