@@ -24,6 +24,7 @@ nester.describe('wbtforest', function()
       local wbt2 = forest:makewbtmap() -- : wbtmapT
       expect.equal(#forest, 2)
       local wbt3 = wbt2:insert(42,-42)
+      expect.equal(wbt3:getordefault(42,-999), -42)
     end)
   end)
 end)
