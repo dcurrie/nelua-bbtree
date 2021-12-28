@@ -18,7 +18,12 @@ nester.describe('wbtforest', function()
 
     nester.it('instanciating', function()
       local forest: wbtforest(integer, integer)
-      expect.equal(#forest, 1) -- Fail.
+      expect.equal(#forest, 0)
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      expect.equal(#forest, 1)
+      local wbt2 = forest:makewbtmap() -- : wbtmapT
+      expect.equal(#forest, 2)
+      local wbt3 = wbt2:insert(42,-42)
     end)
   end)
 end)
