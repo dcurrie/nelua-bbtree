@@ -1,6 +1,12 @@
 require 'wbtforest'
 require 'nester'
 
+## if WBTFOREST_UNITTEST then
+  local function PRINTF(...: varargs): void <inline> io.printf(...) end
+## else
+  local function PRINTF(...: varargs): void <inline> --[[empty]] end
+## end
+
 -- Customize nester configuration.
 nester.stop_on_fail = false
 
@@ -16,7 +22,7 @@ nester.describe('wbtforest', function()
       expect.equal(#forest, 0) -- uses doubly linked list
     end)
 
-    nester.it('instanciating', function()
+    nester.it('insert & get', function()
       local forest: wbtforest(integer, integer)
       expect.equal(#forest, 0)
       local wbt1 = forest:makewbtmap() -- : wbtmapT
@@ -25,7 +31,31 @@ nester.describe('wbtforest', function()
       expect.equal(#forest, 2)
       local wbt3 = wbt2:insert(42,-42)
       expect.equal(wbt3:getordefault(42,-999), -42)
+      expect.equal(wbt3:getordefault(41,-999), -999)
+      expect.equal(wbt2:getordefault(42,-999), -999)
     end)
+
+    nester.it('grow', function()
+      local forest: wbtforest(integer, integer)
+      --PRINTF!("About to make\n")
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      --PRINTF!("About to loop\n")
+      for i = 1, 45 do
+        local wbt2 = wbt1:insert(i,-i)
+        --wbt1 = wbt1:insert(i,-i)
+        --PRINTF("%d: %s\n", i, wbt1:treetostring())
+        --PRINTF("forest len %d i %d\n", #forest, i)
+        --PRINTF("i %d wbt2 siz %d\n", i, #wbt2)
+        wbt1, wbt2 = wbt2, wbt1
+        wbt2:destroy()
+        expect.equal(#forest, 1)
+        --PRINTF("i %d wbt1 siz %d\n", i, #wbt1)
+        expect.equal(#wbt1, i)
+      end
+      expect.equal(wbt1:getordefault(42,-999), -42)
+      --PRINTF("%s\n", wbt1:treetostring())
+    end)
+
   end)
 end)
 

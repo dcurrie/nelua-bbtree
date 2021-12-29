@@ -81,6 +81,9 @@ operations I need are insert (`__atindex`), `remove`, and an iterator like `__pa
 Workaround: Keep the list of roots in the forest data structure, but return a wbt-token that
 points to an entry in the list of roots. When the wbt-token is GC'd or `destroy`ed the `__gc`
 metamethod deletes the entry from the list.
+
+Nodes created during insert et al may have no gc root until the tree is stitched up, so we keep
+a list `gcwip` of allocs for gc that is cleared before top level return from wbtreeT functions.
 ]]
 
 --[[
@@ -95,13 +98,19 @@ require "bitvector"
 -- Constant used to enable unit test
 ## WBTFOREST_UNITTEST = true
 
+--## if WBTFOREST_UNITTEST then
+--  require 'io'
+--  ## function PRINTF(...)
+--    io.printf(#[aster.unpack{...}]#)
+--  ## end
+--## else
+--  ## function PRINTF(...) end
+--## end
+
 ## if WBTFOREST_UNITTEST then
-  require 'io'
-  ## function PRINTF(...)
-    io.printf(#[aster.unpack{...}]#)
-  ## end
+  local function PRINTF(...: varargs): void <inline> io.printf(...) end
 ## else
-  ## function PRINTF(...) end
+  local function PRINTF(...: varargs): void <inline> --[[empty]] end
 ## end
 
 local OMEGA: uint32 <comptime> = 3
@@ -152,22 +161,18 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   local wbtrootT: type <nickname(#[string.format('wbtroot(%s, %s)',K,V)]#)> = @record{
     prev: *wbtrootT, -- prev map in linked list of maps
     next: *wbtrootT, -- next map in linked list of maps
-    root: uint32            -- index into span nodes, root of wbtree, WBTNIL for empty tree
+    node: uint32     -- index into span nodes, root of wbtree, WBTNIL for empty tree
   }
-
-  -- we make an indirect reference to the wbtrootT.root to support GC in lieu of weak sets
-  -- wbt map record defined when calling `wbtforest:make`.
-  --local wbtmapT: type <nickname(#[string.format('wbtmap(%s, %s)',K,V)]#)> = @record{
-  --  root: *wbtrootT      -- indirection to tree root
-  --}
 
   -- wbt map record defined when instantiating the generic `wbtmap`.
   local wbtforestT: type <nickname(#[string.format('wbtforest(%s, %s)',K,V)]#)> = @record{
-    roots: wbtrootT, -- sentinel in list of roots
+    roots: wbtrootT, -- sentinel in list of tree roots
     bumpa: uint32,   -- index into span nodes, bump allocator, full when bump == #nodes
     rover: uint32,   -- index into marks, the last free (unmarked) node allocated
+    wip_n: uint32,   -- count of nodes in gcwip
     nodes: span(wbtnodeT),
     marks: span(uint64), -- mark bits
+    gcwip: span(uint32), -- gc roots maybe not in tree yet
     allocator: Allocator
   }
 
@@ -209,8 +214,13 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtmapT:destroy(): void
     local iroot: *wbtrootT = self.root
     if iroot ~= WBTNIL then
-      -- TODO unlink from list
-      iroot.root = WBTNIL
+      -- unlink from list
+      iroot.prev.next = iroot.next
+      iroot.next.prev = iroot.prev
+      iroot.prev = nilptr
+      iroot.next = nilptr
+      iroot.node = WBTNIL
+      self.forest.allocator:dealloc(iroot)
     end
   end
 
@@ -264,7 +274,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       -- make doubly linked list
       self.roots.prev = &self.roots
       self.roots.next = &self.roots
-      self.roots.root = WBTNIL
+      self.roots.node = WBTNIL
     else
       local rover: *wbtrootT = self.roots.next
       while rover ~= &self.roots do
@@ -296,7 +306,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   -- internal function to mark a subtree; returns count of new marks
   function wbtforestT:mark(node: uint32): uint32
     local used: uint32 = 0
-    if bitvector.setbit(self.marks, node) then
+    if node ~= WBTNIL and bitvector.setbit(self.marks, node) then
+      --PRINTF("Marking node %u key %d\n", node, self.nodes[node].key)
       used = 1_uint32
       used = used + self:mark(self.nodes[node].lhs)
       used = used + self:mark(self.nodes[node].rhs)
@@ -311,13 +322,22 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       -- make doubly linked list
       self.roots.prev = &self.roots
       self.roots.next = &self.roots
-      self.roots.root = WBTNIL
+      self.roots.node = WBTNIL
     else
       local rover: *wbtrootT = self.roots.next
       while rover ~= &self.roots do
-        used = used + self:mark(rover.root)
+        --PRINTF("Marking root %u\n", rover.node)
+        used = used + self:mark(rover.node)
+        --PRINTF("Marked %u found %u next %u\n", rover.node, used, rover.next.node)
         rover = rover.next
       end
+    end
+    local wip_i: uint32 = 0
+    while wip_i < self.wip_n do
+      local node = self.gcwip[wip_i]
+      --PRINTF("Marking wip %u\n", node)
+      used = used + self:mark(node)
+      wip_i = wip_i + 1
     end
     return used
   end
@@ -328,24 +348,27 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtforestT:markandalloc(): uint32
     local used: uint32 = 0
     if unlikely(#self.nodes == 0) then
-      PRINTF!("Initial Allocation %u\n", INIT_CAPACITY)
+      --PRINTF("Initial Allocation %u\n", INIT_CAPACITY)
       -- need to allocate for the first time
       self.nodes = self.allocator:xspanalloc0(wbtnodeT, INIT_CAPACITY)
       self.marks = self.allocator:xspanalloc0(uint64, INIT_CAPACITY // 64_uint64)
+      self.gcwip = self.allocator:xspanalloc0(uint32, INIT_CAPACITY)
     else
       bitvector.clearall(self.marks) -- zero the bitvector
-      PRINTF!("Marking\n")
+      --PRINTF("Marking begin\n")
       used = self:markallroots() -- GC mark phase
+      --PRINTF("Marking end\n")
       -- used/#nodes > 85/100 == 100 * used > 85 * #nodes
       -- note that using >= makes zero size forest pass the test
       if (100 * (@int64)(used)) >= (MAX_LOAD_FACTOR * #self.nodes) then
-        PRINTF!("Growing\n")
+        --PRINTF("Growing\n")
         -- need to grow
         local newsize: uint32 = #self.nodes * 2
         self.nodes = self.allocator:xspanrealloc0(self.nodes, newsize)
         self.marks = self.allocator:xspanrealloc0(self.marks, newsize // 64_uint64)
       end
     end
+    self.rover = 0 -- new marks, start afresh
     -- now alloc node
     local node: uint32 = self:firstfree()
     if node == WBTNIL then
@@ -354,13 +377,14 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
         node = self.bumpa
         self.bumpa = node + 1
       else
+        --PRINTF("Bumpa %u #nodes %d\n", self.bumpa, #self.nodes)
         assert(self.bumpa < #self.nodes) -- fail here; should not be possible
       end
     end
     return node
   end
 
-  function wbtforestT:nodealloc(lhs: uint32, key: K, val: V, rhs: uint32): uint32
+  function wbtforestT:nodealloc(lhs: uint32, key: K, val: V, rhs: uint32, siz: uint32): uint32
     local node: uint32 = self:firstfree()
     if node == WBTNIL then
       if self.bumpa < #self.nodes then
@@ -374,9 +398,16 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
     self.nodes[node].lhs = lhs
     self.nodes[node].rhs = rhs
-    self.nodes[node].siz = 1
+    self.nodes[node].siz = siz
     self.nodes[node].key = key
     self.nodes[node].val = val
+    -- add node to gcwip
+    if self.wip_n >= #self.gcwip then
+      -- TODO
+      assert(self.wip_n < #self.gcwip) -- fail here; need TODO
+    end
+    self.gcwip[self.wip_n] = node
+    self.wip_n = self.wip_n + 1
     return node
   end
 
@@ -388,27 +419,38 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
   end
 
+  function wbtforestT:newleaf(key: K, val: V): uint32 <inline>
+    -- constructor for a leaf node
+    return self:nodealloc(WBTNIL, key, val, WBTNIL, 1)
+  end
+
+  function wbtforestT:newnode(lhs: uint32, key: K, val: V, rhs: uint32): uint32 <inline>
+    -- constructor for a new node
+    local size = self:nodesize(lhs) + 1 + self:nodesize(rhs)
+    return self:nodealloc(lhs, key, val, rhs, size)
+  end
+
   function wbtforestT:singleL(lhs: uint32, key: K, val: V, rhs: uint32): uint32
-    return self:nodealloc(
-      self:nodealloc(lhs, key, val, self.nodes[rhs].lhs),
+    return self:newnode(
+      self:newnode(lhs, key, val, self.nodes[rhs].lhs),
       self.nodes[rhs].key,
       self.nodes[rhs].val,
       self.nodes[rhs].rhs)
   end
   function wbtforestT:singleR(lhs: uint32, key: K, val: V, rhs: uint32): uint32
-    return self:nodealloc(
+    return self:newnode(
       self.nodes[lhs].lhs,
       self.nodes[lhs].key,
       self.nodes[lhs].val,
-      self:nodealloc(self.nodes[lhs].rhs, key, val, rhs))
+      self:newnode(self.nodes[lhs].rhs, key, val, rhs))
   end
   function wbtforestT:doubleL(lhs: uint32, key: K, val: V, rhs: uint32): uint32
     local rl = self.nodes[rhs].lhs
-    return self:nodealloc(
-      self:nodealloc(lhs, key, val, self.nodes[rl].lhs),
+    return self:newnode(
+      self:newnode(lhs, key, val, self.nodes[rl].lhs),
       self.nodes[rl].key,
       self.nodes[rl].val,
-      self:nodealloc(
+      self:newnode(
         self.nodes[rl].rhs,
         self.nodes[rhs].key,
         self.nodes[rhs].val,
@@ -416,15 +458,15 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   end
   function wbtforestT:doubleR(lhs: uint32, key: K, val: V, rhs: uint32): uint32
     local lr = self.nodes[lhs].rhs
-    return self:nodealloc(
-      self:nodealloc(
+    return self:newnode(
+      self:newnode(
         self.nodes[lhs].lhs,
         self.nodes[lhs].key,
         self.nodes[lhs].val,
         self.nodes[lr].lhs),
       self.nodes[lr].key,
       self.nodes[lr].val,
-      self:nodealloc(self.nodes[lr].rhs, key, val, rhs))
+      self:newnode(self.nodes[lr].rhs, key, val, rhs))
   end
 
   function wbtforestT:balance(lhs: uint32, key: K, val: V, rhs: uint32): uint32
@@ -432,7 +474,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     local sl = self:nodesize(lhs)
     local sr = self:nodesize(rhs)
     if ((sl + sr) <= 1) then
-        result = self:nodealloc(lhs, key, val, rhs)
+        result = self:newnode(lhs, key, val, rhs)
     elseif (sr > (OMEGA * sl)) then
         if (self:nodesize(self.nodes[rhs].lhs) < (ALPHA * self:nodesize(self.nodes[rhs].rhs))) then
             result = self:singleL(lhs, key, val, rhs)
@@ -446,14 +488,14 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
             result = self:doubleR(lhs, key, val, rhs)
         end
     else
-        result = self:nodealloc(lhs, key, val, rhs)
+        result = self:newnode(lhs, key, val, rhs)
     end
     return result
   end
 
   function wbtforestT:insert(n: uint32, k: K, v: V): uint32
     if n == WBTNIL then
-      return self:nodealloc(WBTNIL, k, v, WBTNIL)
+      return self:newleaf(k, v)
     end
     local root = self.nodes[n]
     local dif = #[CompareFunc]#(k, root.key)
@@ -464,7 +506,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       return self:balance(root.lhs, root.key, root.val, self:insert(root.rhs, k, v))
     else
       -- XXX: check if val equal to avoid alloc? not possible without second compare func
-      return self:nodealloc(root.lhs, k, v, root.rhs)
+      return self:newnode(root.lhs, k, v, root.rhs)
     end
   end
 
@@ -489,11 +531,18 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
-  function wbtforestT:makewbtmap_(root: uint32): wbtmapT
+  function wbtforestT:makewbtmap_(node: uint32): wbtmapT
     local wbt: wbtmapT
     local rootp: *wbtrootT = (@*wbtrootT)(self.allocator:xalloc0(#wbtrootT))
-    rootp.root = root
+    rootp.node = node
     -- insert wbtroot into doubly linked list
+    -- TODO make this init into an inline function, or find a more reliable place for it?
+    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
+      -- make doubly linked list
+      self.roots.prev = &self.roots
+      self.roots.next = &self.roots
+      self.roots.node = WBTNIL
+    end
     rootp.next = self.roots.next
     self.roots.next = rootp
     rootp.prev = &self.roots
@@ -508,14 +557,43 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return self:makewbtmap_(WBTNIL)
   end
 
+  function wbtforestT:wbtsize(node: uint32)
+    if node < self.bumpa then
+      return self.nodes[node].siz
+    else
+      return 0
+    end
+  end
+
   function wbtmapT:insert(k: K, v: V): wbtmapT
-    local root: uint32 = self.forest:insert(self.root.root, k, v)
-    return self.forest:makewbtmap_(root)
+    local node: uint32 = self.forest:insert(self.root.node, k, v)
+    self.forest.wip_n = 0 -- no more wip
+    return self.forest:makewbtmap_(node)
   end
 
   function wbtmapT:getordefault(k: K, default: V): V
-    return self.forest:getordefault(self.root.root, k, default)
+    return self.forest:getordefault(self.root.node, k, default)
   end
+
+  function wbtmapT:__len(): isize
+    return self.forest:wbtsize(self.root.node)
+  end
+
+## if WBTFOREST_UNITTEST then
+  function wbtforestT:treetostring(n: uint32): string
+    -- assume int keys
+    if n == WBTNIL then
+      return ""
+    end
+    local root = self.nodes[n]
+    return string.format("(%s %d %s)",
+             self:treetostring(root.lhs), root.key, self:treetostring(root.rhs))
+  end
+  function wbtmapT:treetostring(): string
+    return self.forest:treetostring(self.root.node)
+  end
+## end
+
 
   -- TODO
 
