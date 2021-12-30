@@ -1,0 +1,25 @@
+
+-- use -DeDEBUG on the command line to enable verbose printing
+
+-- the modules that include `require "edebug" can use the PRINTF macro
+-- that will print when eDEBUG is defined `true` and do nothing otherwise
+-- usage:
+-- PRINTF!("Loop count: \n", i)
+-- or
+-- #[PRINTF]#("Loop count: \n", i)
+
+## if eDEBUG then
+  require 'io'
+  ## function PRINTF(...)
+    io.printf(#[aster.unpack{...}]#)
+  ## end
+## else
+  ## function PRINTF(...) end
+## end
+
+-- this is a version that uses the C compiler to optimize out the empty function
+--## if eDEBUG then
+--  local function CPRINTF(...: varargs): void <inline> io.printf(...) end
+--## else
+--  local function CPRINTF(...: varargs): void <inline> --[[empty]] end
+--## end

@@ -1,12 +1,6 @@
 require 'wbtforest'
 require 'nester'
 
-## if WBTFOREST_UNITTEST then
-  local function PRINTF(...: varargs): void <inline> io.printf(...) end
-## else
-  local function PRINTF(...: varargs): void <inline> --[[empty]] end
-## end
-
 -- Customize nester configuration.
 nester.stop_on_fail = false
 
@@ -43,17 +37,17 @@ nester.describe('wbtforest', function()
       for i = 1, 45 do
         local wbt2 = wbt1:insert(i,-i)
         --wbt1 = wbt1:insert(i,-i)
-        --PRINTF("%d: %s\n", i, wbt1:treetostring())
-        --PRINTF("forest len %d i %d\n", #forest, i)
-        --PRINTF("i %d wbt2 siz %d\n", i, #wbt2)
+        --PRINTF!("%d: %s\n", i, wbt1:treetostring())
+        --PRINTF!("forest len %d i %d\n", #forest, i)
+        --PRINTF!("i %d wbt2 siz %d\n", i, #wbt2)
         wbt1, wbt2 = wbt2, wbt1
         wbt2:destroy()
         expect.equal(#forest, 1)
-        --PRINTF("i %d wbt1 siz %d\n", i, #wbt1)
+        --PRINTF!("i %d wbt1 siz %d\n", i, #wbt1)
         expect.equal(#wbt1, i)
       end
       expect.equal(wbt1:getordefault(42,-999), -42)
-      --PRINTF("%s\n", wbt1:treetostring())
+      --PRINTF!("%s\n", wbt1:treetostring())
     end)
 
   end)

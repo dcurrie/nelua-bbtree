@@ -93,25 +93,11 @@ used by the primary algorithms. The stack depth is the same as the tree height, 
 to the log base 2 of the tree size.
 ]]
 
+require "edebug"
 require "bitvector"
 
--- Constant used to enable unit test
+-- Constant used to enable unit test functions
 ## WBTFOREST_UNITTEST = true
-
---## if WBTFOREST_UNITTEST then
---  require 'io'
---  ## function PRINTF(...)
---    io.printf(#[aster.unpack{...}]#)
---  ## end
---## else
---  ## function PRINTF(...) end
---## end
-
-## if WBTFOREST_UNITTEST then
-  local function PRINTF(...: varargs): void <inline> io.printf(...) end
-## else
-  local function PRINTF(...: varargs): void <inline> --[[empty]] end
-## end
 
 local OMEGA: uint32 <comptime> = 3
 local ALPHA: uint32 <comptime> = 2
@@ -307,7 +293,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtforestT:mark(node: uint32): uint32
     local used: uint32 = 0
     if node ~= WBTNIL and bitvector.setbit(self.marks, node) then
-      --PRINTF("Marking node %u key %d\n", node, self.nodes[node].key)
+      --PRINTF!("Marking node %u key %d\n", node, self.nodes[node].key)
       used = 1_uint32
       used = used + self:mark(self.nodes[node].lhs)
       used = used + self:mark(self.nodes[node].rhs)
@@ -326,16 +312,16 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     else
       local rover: *wbtrootT = self.roots.next
       while rover ~= &self.roots do
-        --PRINTF("Marking root %u\n", rover.node)
+        --PRINTF!("Marking root %u\n", rover.node)
         used = used + self:mark(rover.node)
-        --PRINTF("Marked %u found %u next %u\n", rover.node, used, rover.next.node)
+        --PRINTF!("Marked %u found %u next %u\n", rover.node, used, rover.next.node)
         rover = rover.next
       end
     end
     local wip_i: uint32 = 0
     while wip_i < self.wip_n do
       local node = self.gcwip[wip_i]
-      --PRINTF("Marking wip %u\n", node)
+      --PRINTF!("Marking wip %u node %u\n", wip_i, node)
       used = used + self:mark(node)
       wip_i = wip_i + 1
     end
@@ -348,20 +334,20 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtforestT:markandalloc(): uint32
     local used: uint32 = 0
     if unlikely(#self.nodes == 0) then
-      --PRINTF("Initial Allocation %u\n", INIT_CAPACITY)
+      --PRINTF!("Initial Allocation %u\n", INIT_CAPACITY)
       -- need to allocate for the first time
       self.nodes = self.allocator:xspanalloc0(wbtnodeT, INIT_CAPACITY)
       self.marks = self.allocator:xspanalloc0(uint64, INIT_CAPACITY // 64_uint64)
       self.gcwip = self.allocator:xspanalloc0(uint32, INIT_CAPACITY)
     else
       bitvector.clearall(self.marks) -- zero the bitvector
-      --PRINTF("Marking begin\n")
+      --PRINTF!("Marking begin\n")
       used = self:markallroots() -- GC mark phase
-      --PRINTF("Marking end\n")
+      --PRINTF!("Marking end\n")
       -- used/#nodes > 85/100 == 100 * used > 85 * #nodes
       -- note that using >= makes zero size forest pass the test
       if (100 * (@int64)(used)) >= (MAX_LOAD_FACTOR * #self.nodes) then
-        --PRINTF("Growing\n")
+        --PRINTF!("Growing\n")
         -- need to grow
         local newsize: uint32 = #self.nodes * 2
         self.nodes = self.allocator:xspanrealloc0(self.nodes, newsize)
@@ -377,7 +363,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
         node = self.bumpa
         self.bumpa = node + 1
       else
-        --PRINTF("Bumpa %u #nodes %d\n", self.bumpa, #self.nodes)
+        --PRINTF!("Bumpa %u #nodes %d\n", self.bumpa, #self.nodes)
         assert(self.bumpa < #self.nodes) -- fail here; should not be possible
       end
     end
@@ -597,156 +583,6 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
 
   -- TODO
 
---  function wbtmapT:find_(k: K): *V
---    local node: uint32 = self.root
---    local bump: uint32 = self.bump
---    while node < bump do
---      if #[CompareFunc]#(k, self.nodes[node].key) then
---        node = self.nodes[node].l
---      elseif #[CompareFunc]#(self.nodes[node].key, k) then
---        node = self.nodes[node].r
---      else
---        return &self.nodes[node].val
---      end
---    end
---    return nilptr
---  end
---
---  function wbtmapT:nodealloc(k: K, v: V): uint32
---    local node: uint32 = 0
---    if self.free < self.bump then
---      -- pull from free list
---      node = self.free
---      self.free = self.nodes[node].l
---    elseif self.bump < #self.nodes then
---      -- bump alloc
---      node = self.bump
---      self.bump = node + 1
---    else
---      assert(self.bump == #self.nodes)
---      assert(self.free == WBTNIL or (self.free == 0 and self.bump == 0))
---      self.free = WBTNIL -- in case this is the first time to grow
---      -- must grow
---      local newsize: uint32 = #self.nodes * 2
---      if unlikely(newsize == 0) then
---        newsize = INIT_CAPACITY
---      end
---      self.nodes = self.allocator:xspanrealloc0(self.nodes, newsize)
---      node = self.bump
---      self.bump = node + 1
---    end
---    self.nodes[node].l = WBTNIL
---    self.nodes[node].r = WBTNIL
---    self.nodes[node].siz = 1
---    self.nodes[node].key = k
---    self.nodes[node].val = v
---    return node
---  end
---
---  function wbtmapT:nodesize_(node: uint32): uint32 <inline>
---    if node < self.bump then
---      return self.nodes[node].siz
---    else
---      return 0
---    end
---  end
---
---  function wbtmapT:noderesize_(node: uint32): void <inline>
---    self.nodes[node].siz =
---      self:nodesize_(self.nodes[node].l) + 1 + self:nodesize_(self.nodes[node].r)
---  end
---
---  function wbtmapT:rotl(node: uint32): uint32
---    local temp: uint32 = node
---    node = self.nodes[node].r
---    self.nodes[temp].r = self.nodes[node].l
---    self.nodes[node].l = temp
---    self.nodes[node].siz = self.nodes[temp].siz
---    self:noderesize_(temp)
---    return node
---  end
---
---  function wbtmapT:rotr(node: uint32): uint32
---    local temp: uint32 = node
---    node = self.nodes[node].l
---    self.nodes[temp].l = self.nodes[node].r
---    self.nodes[node].r = temp
---    self.nodes[node].siz = self.nodes[temp].siz
---    self:noderesize_(temp)
---    return node
---  end
---
---  function wbtmapT:balance(node: uint32): uint32
---    if node == WBTNIL then return node end
---    local sl: uint32 = self:nodesize_(self.nodes[node].l)
---    local sr: uint32 = self:nodesize_(self.nodes[node].r)
---    if (sl + sr) <= 1 then
---      -- nothing to do
---    elseif sr > (OMEGA * sl) then
---      -- right subtree too heavy
---      local nr: uint32 = self.nodes[node].r
---      assert(nr ~= WBTNIL)
---      if self:nodesize_(self.nodes[nr].l) < (ALPHA * self:nodesize_(self.nodes[nr].r)) then
---        node = self:rotl(node)
---      else
---        self.nodes[node].r = self:rotr(self.nodes[node].r)
---        node = self:rotl(node)
---      end
---    elseif sl > (OMEGA * sr) then
---      -- left subtree too heavy
---      local nl: uint32 = self.nodes[node].l
---      assert(nl ~= WBTNIL)
---      if self:nodesize_(self.nodes[nl].r) < (ALPHA * self:nodesize_(self.nodes[nl].l)) then
---          node = self:rotr(node)
---      else
---        self.nodes[node].l = self:rotl(self.nodes[node].l)
---        node = self:rotr(node)
---      end
---    else
---      -- nothing to do
---    end
---    return node
---  end
---
---  -- Internal function to enable an insert, or replace if key k already present;
---  -- returns pointer to inserted or found value slot
---  function wbtmapT:insert__(k: K, node: uint32): (uint32, *V)
---    if node >= self.bump then
---      -- empty node, so alloc one
---      node = self:nodealloc(k, (@V)())
---      return node, &self.nodes[node].val
---    elseif #[CompareFunc]#(k, self.nodes[node].key) then
---      local newroot: uint32, vptr: *V = self:insert__(k, self.nodes[node].l)
---      self.nodes[node].l = newroot
---      self:noderesize_(node)
---      return self:balance(node), vptr
---    elseif #[CompareFunc]#(self.nodes[node].key, k) then
---      local newroot: uint32, vptr: *V = self:insert__(k, self.nodes[node].r)
---      self.nodes[node].r = newroot
---      self:noderesize_(node)
---      return self:balance(node), vptr
---    else
---      return node, &self.nodes[node].val
---    end
---  end
---  function wbtmapT:insert_(k: K): *V
---    local newroot: uint32, vptr: *V = self:insert__(k, self.root)
---    self.root = newroot
---    return vptr
---  end
---
---  -- Returns the number of elements in the container.
---  function wbtmapT:__len(): isize
---    local size: isize = 0
---    local root: uint32 = self.root
---    if root < self.bump then -- (root ~= WBTNIL) is tempting, but fails "zero is initialization" precept
---      size = self.nodes[root].siz
---    end
---    return size
---  end
---
---  ##if WBTFOREST_UNITTEST then
---
 --  function wbtmapT:balanced_(node: uint32): isize
 --    if node == WBTNIL then return 0 end
 --    local sl: uint32 = self:nodesize_(self.nodes[node].l)
