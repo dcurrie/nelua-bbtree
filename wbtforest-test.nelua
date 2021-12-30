@@ -52,7 +52,26 @@ nester.describe('wbtforest', function()
       --PRINTF!("gcwip size: %d\n", #forest.gcwip)
       --PRINTF!("240 inserts; sizes... nodes: %d marks %d gcwip: %d\n"
       --          , #forest.nodes, #forest.marks, #forest.gcwip)
+      --for k,v in pairs(wbt1) do PRINTF!("k: %d v: %d\n", k, v) end
     end)
+
+    nester.it('pairs', function()
+      local forest: wbtforest(integer, integer)
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      for i = 1, 1000 do
+        local wbt2 = wbt1:insert(i,-i)
+        wbt1, wbt2 = wbt2, wbt1
+        wbt2:destroy()
+      end
+      expect.equal(#wbt1, 1000)
+      local i = 1
+      for k,v in pairs(wbt1) do
+        expect.equal(k, i)
+        expect.equal(v, -i)
+        i = i + 1
+      end
+    end)
+
 
   end)
 end)
