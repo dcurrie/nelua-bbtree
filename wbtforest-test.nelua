@@ -58,6 +58,9 @@ nester.describe('wbtforest', function()
     nester.it('pairs', function()
       local forest: wbtforest(integer, integer)
       local wbt1 = forest:makewbtmap() -- : wbtmapT
+      for k,v in pairs(wbt1) do
+        expect.equal(k, v) -- to fail since there should be no pairs yet
+      end
       for i = 1, 1000 do
         local wbt2 = wbt1:insert(i,-i)
         wbt1, wbt2 = wbt2, wbt1
@@ -72,6 +75,25 @@ nester.describe('wbtforest', function()
       end
     end)
 
+    nester.it('revpairs', function()
+      local forest: wbtforest(integer, integer)
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      for k,v in wbt1:revpairs() do
+        expect.equal(k, v) -- to fail since there should be no pairs yet
+      end
+      for i = 1, 1000 do
+        local wbt2 = wbt1:insert(i,-i)
+        wbt1, wbt2 = wbt2, wbt1
+        wbt2:destroy()
+      end
+      expect.equal(#wbt1, 1000)
+      local i = 1000
+      for k,v in wbt1:revpairs() do
+        expect.equal(k, i)
+        expect.equal(v, -i)
+        i = i - 1
+      end
+    end)
 
   end)
 end)

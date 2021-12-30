@@ -581,7 +581,41 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       return true, self.forest.nodes[curr].key, self.forest.nodes[curr].val
     else
       -- it is an empty tree or we're at the end
-      -- TODO: dealloc stack
+      -- dealloc stack
+      self.forest.allocator:spandealloc(self.stack)
+      self.stack = (@span(uint32))()
+      return false, (@K)(), (@V)()
+    end
+  end
+
+  function wbtmap_iteratorT:revnext(key: K): (boolean, K, V)
+    local curr = self.next
+    if unlikely(self.stidx == WBTNIL) then
+      -- init the stack; curr is root
+      self.stidx = 0
+    elseif curr ~= WBTNIL then
+      -- go left from last yielded node
+      curr = self.forest.nodes[curr].lhs
+    end
+    if curr ~= WBTNIL or self.stidx > 0 then
+      while curr ~= WBTNIL do -- push node before going right
+        if unlikely(self.stidx >= #self.stack) then
+          self.stack = self.forest.allocator:xspanrealloc(self.stack, 2 * #self.stack)
+        end
+        self.stack[self.stidx] = curr
+        self.stidx = self.stidx + 1
+        curr = self.forest.nodes[curr].rhs
+      end
+      -- at the righttmost node; curr is nil; pop
+      self.stidx = self.stidx - 1
+      curr = self.stack[self.stidx]
+      self.next = curr
+      return true, self.forest.nodes[curr].key, self.forest.nodes[curr].val
+    else
+      -- it is an empty tree or we're at the end
+      -- dealloc stack
+      self.forest.allocator:spandealloc(self.stack)
+      self.stack = (@span(uint32))()
       return false, (@K)(), (@V)()
     end
   end
@@ -589,6 +623,16 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   -- Support using `pairs()` to iterate the wbtmapT container.
   function wbtmapT:__pairs(): (auto, wbtmap_iteratorT, K) <inline>
     return wbtmap_iteratorT.next,
+           (@wbtmap_iteratorT){forest = self.forest,
+                               stack = self.forest.allocator:xspanalloc(uint32, INIT_CAPACITY),
+                               stidx = WBTNIL,
+                               next = self.root.node},
+           (@K)()
+  end
+
+  -- Support using `revpairs()` to iterate the wbtmapT container.
+  function wbtmapT:revpairs(): (auto, wbtmap_iteratorT, K) <inline>
+    return wbtmap_iteratorT.revnext,
            (@wbtmap_iteratorT){forest = self.forest,
                                stack = self.forest.allocator:xspanalloc(uint32, INIT_CAPACITY),
                                stidx = WBTNIL,
