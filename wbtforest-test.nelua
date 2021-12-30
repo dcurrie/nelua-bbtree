@@ -48,6 +48,7 @@ nester.describe('wbtforest', function()
       end
       expect.equal(wbt1:getordefault(42,-999), -42)
       --PRINTF!("%s\n", wbt1:treetostring())
+      --PRINTF!("gcwip size: %d\n", #forest.gcwip)
     end)
 
   end)

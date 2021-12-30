@@ -223,35 +223,20 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   --[[
   Resets the container to a zeroed state, freeing all used resources.
 
-  *Complexity*: O(1). -- TODO
+  *Complexity*: O(1).
   ]]
   function wbtforestT:destroy(): void
     self.allocator:spandealloc(self.nodes)
     self.nodes = (@span(wbtnodeT))()
     self.bumpa = 0
     self.rover = 0
-    -- TODO - can we delete the roots? It may leave dangling pointers for some wbtmapT records.
+    -- We cannot delete the roots. It would leave dangling pointers for some wbtmapT records.
   end
 
   -- Effectively the same as `destroy`, called when a to-be-closed variable goes out of scope.
   function wbtforestT:__close(): void
     self:destroy()
   end
-
-  --[[
-  Remove all elements from the container.
-  The internal storage buffers are not freed, and they may be reused.
-
-  *Complexity*: O(n).
-
-  -- TODO is this even possible without leaving dangling pointers?
-
-  function wbtforestT:clear(): void
-    memory.spanzero(self.nodes)
-    -- TODO close all roots; dangling pointers!? self.root = WBTNIL
-    self.bump = 0
-  end
-  ]]
 
   -- Returns the number of elements in the container, in this case the number of roots.
   function wbtforestT:__len(): isize
@@ -389,8 +374,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     self.nodes[node].val = val
     -- add node to gcwip
     if self.wip_n >= #self.gcwip then
-      -- TODO
-      assert(self.wip_n < #self.gcwip) -- fail here; need TODO
+      -- grow gcwip
+      self.gcwip = self.allocator:xspanrealloc(self.gcwip, 2 * #self.gcwip)
     end
     self.gcwip[self.wip_n] = node
     self.wip_n = self.wip_n + 1
