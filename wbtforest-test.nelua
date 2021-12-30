@@ -34,7 +34,7 @@ nester.describe('wbtforest', function()
       --PRINTF!("About to make\n")
       local wbt1 = forest:makewbtmap() -- : wbtmapT
       --PRINTF!("About to loop\n")
-      for i = 1, 45 do
+      for i = 1, 240 do
         local wbt2 = wbt1:insert(i,-i)
         --wbt1 = wbt1:insert(i,-i)
         --PRINTF!("%d: %s\n", i, wbt1:treetostring())
@@ -47,8 +47,11 @@ nester.describe('wbtforest', function()
         expect.equal(#wbt1, i)
       end
       expect.equal(wbt1:getordefault(42,-999), -42)
+      expect.equal(wbt1:getordefault(222,-999), -222)
       --PRINTF!("%s\n", wbt1:treetostring())
       --PRINTF!("gcwip size: %d\n", #forest.gcwip)
+      --PRINTF!("240 inserts; sizes... nodes: %d marks %d gcwip: %d\n"
+      --          , #forest.nodes, #forest.marks, #forest.gcwip)
     end)
 
   end)

@@ -180,17 +180,28 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   wbtforestT.V = V
   ]]
 
+  -- internal function to initialize the forest wbtree roots list
+  function wbtforestT:preprootslist(): void <inline>
+    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
+      -- make doubly linked list
+      self.roots.prev = &self.roots
+      self.roots.next = &self.roots
+      self.roots.node = WBTNIL
+    end
+  end
+
   --[[
   Creates a wbt forest using a custom allocator instance.
   Useful only when using instanced allocators.
 
   e: this is copied from heapmap.nelua and I'm not sure it's useful
-  ]]
+
   function wbtforestT.make(allocator: Allocator): wbtforestT
     local m: wbtforestT
     m.allocator = allocator
     return m
   end
+  ]]
 
   --[[
   Resets the container to a zeroed state, freeing all used resources.
@@ -241,17 +252,11 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   -- Returns the number of elements in the container, in this case the number of roots.
   function wbtforestT:__len(): isize
     local size: isize = 0
-    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
-      -- make doubly linked list
-      self.roots.prev = &self.roots
-      self.roots.next = &self.roots
-      self.roots.node = WBTNIL
-    else
-      local rover: *wbtrootT = self.roots.next
-      while rover ~= &self.roots do
-        size = size + 1
-        rover = rover.next
-      end
+    self:preprootslist()
+    local rover: *wbtrootT = self.roots.next
+    while rover ~= &self.roots do
+      size = size + 1
+      rover = rover.next
     end
     return size
   end
@@ -289,19 +294,13 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   -- internal function to mark all roots; returns count of marks
   function wbtforestT:markallroots(): uint32
     local used: uint32 = 0
-    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
-      -- make doubly linked list
-      self.roots.prev = &self.roots
-      self.roots.next = &self.roots
-      self.roots.node = WBTNIL
-    else
-      local rover: *wbtrootT = self.roots.next
-      while rover ~= &self.roots do
-        --PRINTF!("Marking root %u\n", rover.node)
-        used = used + self:mark(rover.node)
-        --PRINTF!("Marked %u found %u next %u\n", rover.node, used, rover.next.node)
-        rover = rover.next
-      end
+    self:preprootslist()
+    local rover: *wbtrootT = self.roots.next
+    while rover ~= &self.roots do
+      --PRINTF!("Marking root %u\n", rover.node)
+      used = used + self:mark(rover.node)
+      --PRINTF!("Marked %u found %u next %u\n", rover.node, used, rover.next.node)
+      rover = rover.next
     end
     local wip_i: uint32 = 0
     while wip_i < self.wip_n do
@@ -507,13 +506,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     local rootp: *wbtrootT = (@*wbtrootT)(self.allocator:xalloc0(#wbtrootT))
     rootp.node = node
     -- insert wbtroot into doubly linked list
-    -- TODO make this init into an inline function, or find a more reliable place for it?
-    if unlikely(self.roots.prev == 0 or self.roots.next == 0) then
-      -- make doubly linked list
-      self.roots.prev = &self.roots
-      self.roots.next = &self.roots
-      self.roots.node = WBTNIL
-    end
+    self:preprootslist()
     rootp.next = self.roots.next
     self.roots.next = rootp
     rootp.prev = &self.roots
