@@ -210,7 +210,9 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   ]]
   function wbtmapT:destroy(): void
     local iroot: *wbtrootT = self.root
-    if iroot ~= WBTNIL then
+    if iroot ~= nilptr then
+      -- make idempotent
+      self.root = nilptr
       -- unlink from list
       iroot.prev.next = iroot.next
       iroot.next.prev = iroot.prev
@@ -223,11 +225,13 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
 
   -- Effectively the same as `destroy`, called when a to-be-closed variable goes out of scope.
   function wbtmapT:__close(): void
+    --PRINTF!("__close %u\n", self.root.node)
     self:destroy()
   end
 
   -- Effectively the same as `destroy`, called when record id garbage collected.
   function wbtmapT:__gc(): void
+    --PRINTF!("__gc %u\n", self.root.node)
     self:destroy()
   end
 
@@ -260,6 +264,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
     return size
   end
+
+  --[[ ************************ gc ************************ ]]
 
   -- internal function to try to get a free node using mark bits
   -- basically it's a piece of the sweep phase of the GC
@@ -354,6 +360,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return node
   end
 
+  --[[ ************************ node alloc ************************ ]]
+
   function wbtforestT:nodealloc(lhs: uint32, key: K, val: V, rhs: uint32, siz: uint32): uint32
     local node: uint32 = self:firstfree()
     if node == WBTNIL then
@@ -399,6 +407,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     local size = self:nodesize(lhs) + 1 + self:nodesize(rhs)
     return self:nodealloc(lhs, key, val, rhs, size)
   end
+
+  --[[ ************************ balance ************************ ]]
 
   function wbtforestT:singleL(lhs: uint32, key: K, val: V, rhs: uint32): uint32
     return self:newnode(
@@ -463,6 +473,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
+  --[[ ************************ insert ************************ ]]
+
   function wbtforestT:insert(n: uint32, k: K, v: V): uint32
     if n == WBTNIL then
       return self:newleaf(k, v)
@@ -479,6 +491,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       return self:newnode(root.lhs, k, v, root.rhs)
     end
   end
+
+  --[[ ************************ lookup ************************ ]]
 
   -- default is returned is key is not in tree
   function wbtforestT:getordefault(root: uint32, key: K, default: V): V
@@ -501,8 +515,30 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
-  function wbtforestT:makewbtmap_(node: uint32): wbtmapT
-    local wbt: wbtmapT
+  --[[ ************************ delete ************************ ]]
+
+  function wbtforestT:extractMin(node: uint32): (K, V, uint32) -- mink, minv, node'
+    if self.nodes[node].lhs == WBTNIL then
+        return self.nodes[node].key, self.nodes[node].val, self.nodes[node].rhs
+    else
+        local mink, minv, nodep = self:extractMin(self.nodes[node].lhs)
+        return mink, minv, self:balance(nodep, self.nodes[node].key, self.nodes[node].val, self.nodes[node].rhs)
+    end
+  end
+
+  function wbtforestT:extractMax(node: uint32): (K, V, uint32) -- maxk, maxv, node'
+    if self.nodes[node].rhs == WBTNIL then
+        return self.nodes[node].key, self.nodes[node].val, self.nodes[node].lhs
+    else
+        local maxk, maxv, nodep = self:extractMax(self.nodes[node].rhs)
+        return maxk, maxv, self:balance(self.nodes[node].lhs, self.nodes[node].key, self.nodes[node].val, nodep)
+    end
+  end
+
+  --[[ ************************ wbtree ************************ ]]
+
+  function wbtforestT:makewbtmap_(node: uint32): *wbtmapT
+    local wbt: *wbtmapT =  (@*wbtmapT)(self.allocator:new(@wbtmapT))
     local rootp: *wbtrootT = (@*wbtrootT)(self.allocator:xalloc0(#wbtrootT))
     rootp.node = node
     -- insert wbtroot into doubly linked list
@@ -517,7 +553,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return wbt
   end
 
-  function wbtforestT:makewbtmap(): wbtmapT
+  function wbtforestT:makewbtmap(): *wbtmapT
     return self:makewbtmap_(WBTNIL)
   end
 
@@ -529,7 +565,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
   end
 
-  function wbtmapT:insert(k: K, v: V): wbtmapT
+  function wbtmapT:insert(k: K, v: V): *wbtmapT
     local node: uint32 = self.forest:insert(self.root.node, k, v)
     self.forest.wip_n = 0 -- no more wip
     return self.forest:makewbtmap_(node)
@@ -542,6 +578,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtmapT:__len(): isize
     return self.forest:wbtsize(self.root.node)
   end
+
+    --[[ ************************ iterate ************************ ]]
 
   -- wbtree iterator
   local wbtmap_iteratorT: type = @record{
@@ -588,6 +626,11 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
   end
 
+  --[[
+  Advances the wbtmapT container reverse iterator returning its key and value.
+
+  *Remarks*: The input `key` is actually ignored.
+  ]]
   function wbtmap_iteratorT:revnext(key: K): (boolean, K, V)
     local curr = self.next
     if unlikely(self.stidx == WBTNIL) then
@@ -639,6 +682,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
                                next = self.root.node},
            (@K)()
   end
+
+  --[[ ************************ testing ************************ ]]
 
 ## if WBTFOREST_UNITTEST then
   function wbtforestT:treetostring(n: uint32): string

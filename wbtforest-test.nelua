@@ -29,18 +29,19 @@ nester.describe('wbtforest', function()
       expect.equal(wbt2:getordefault(42,-999), -999)
     end)
 
-    nester.it('grow', function()
-      local forest: wbtforest(integer, integer)
+    nester.it('grow manual', function()
+      local forest: wbtforest(integer, integer, nil, GeneralAllocator)
       --PRINTF!("About to make\n")
-      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      local wbt1 <close> = forest:makewbtmap() -- <close> -- : *wbtmapT NG
       --PRINTF!("About to loop\n")
       for i = 1, 240 do
-        local wbt2 = wbt1:insert(i,-i)
+        local wbt2 = wbt1:insert(i,-i) -- : *wbtmapT
         --wbt1 = wbt1:insert(i,-i)
         --PRINTF!("%d: %s\n", i, wbt1:treetostring())
-        --PRINTF!("forest len %d i %d\n", #forest, i)
+        --PRINTF!("forest len %d i %d nodes %d marks %d\n", #forest, i, #forest.nodes, #forest.marks * 64)
         --PRINTF!("i %d wbt2 siz %d\n", i, #wbt2)
         wbt1, wbt2 = wbt2, wbt1
+        expect.equal(#forest, 2)
         wbt2:destroy()
         expect.equal(#forest, 1)
         --PRINTF!("i %d wbt1 siz %d\n", i, #wbt1)
@@ -53,6 +54,22 @@ nester.describe('wbtforest', function()
       --PRINTF!("240 inserts; sizes... nodes: %d marks %d gcwip: %d\n"
       --          , #forest.nodes, #forest.marks, #forest.gcwip)
       --for k,v in pairs(wbt1) do PRINTF!("k: %d v: %d\n", k, v) end
+    end)
+
+    nester.it('grow autogc', function()
+      local forest: wbtforest(integer, integer)
+      local wbt1p = forest:makewbtmap()
+      for i = 1, 240 do
+        wbt1p = wbt1p:insert(i,-i) -- creates garbage
+        expect.equal(#wbt1p, i)
+      end
+      expect.equal(wbt1p:getordefault(42,-999), -42)
+      expect.equal(wbt1p:getordefault(222,-999), -222)
+      collectgarbage() -- make sure we go through a gc cycle to test:
+      collectgarbage() -- make sure we go through a gc cycle to test:
+      --expect.equal(#forest, 1) -- gc is stubborny holding on to two nodes, the initial empty tree and the final tree
+      expect.truthy(#forest <= 2)
+      --PRINTF!("Forest size: %d\n", #forest)
     end)
 
     nester.it('pairs', function()

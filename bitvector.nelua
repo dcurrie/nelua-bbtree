@@ -50,7 +50,7 @@ end
 -- if none found, return uint32.max
 function bitvector.firstunmarked(bitvec: span(uint64), rover: uint32): uint32
   local widx: uint32 = rover // 64_uint32
-  local bidx: uint32 = rover  & 63_uint32
+  -- unused: local bidx: uint32 = rover  & 63_uint32
   while widx < #bitvec do
     local word: uint64 = bitvec[widx]
     local lsbf: uint8  = ffslsb(~word)
