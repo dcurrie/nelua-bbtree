@@ -19,11 +19,11 @@ nester.describe('wbtforest', function()
     nester.it('insert & get', function()
       local forest: wbtforest(integer, integer)
       expect.equal(#forest, 0)
-      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      local wbt1 <close> = forest:makewbtmap() -- : wbtmapT
       expect.equal(#forest, 1)
-      local wbt2 = forest:makewbtmap() -- : wbtmapT
+      local wbt2 <close> = forest:makewbtmap() -- : wbtmapT
       expect.equal(#forest, 2)
-      local wbt3 = wbt2:insert(42,-42)
+      local wbt3 <close> = wbt2:insert(42,-42)
       expect.equal(wbt3:getordefault(42,-999), -42)
       expect.equal(wbt3:getordefault(41,-999), -999)
       expect.equal(wbt2:getordefault(42,-999), -999)
@@ -56,22 +56,34 @@ nester.describe('wbtforest', function()
       --for k,v in pairs(wbt1) do PRINTF!("k: %d v: %d\n", k, v) end
     end)
 
+
+    -- A `wbtforest` using gc allocator cannot itself be stack allocated because
+    -- it is referenced by wbtmapTs. When a `wbtforest` goes out of scope, the
+    -- linked list of wbtrootTs point back at the now non-existant wbtrootT
+    -- embedded in the `wbtforest` record. So, `new` must be used to allocate
+    -- the `wbtforest`
     nester.it('grow autogc', function()
-      local forest: wbtforest(integer, integer)
+      -- debug
+      --collectgarbage()
+      local forest = gc_allocator:new(@wbtforest(integer, integer, nil, GCAllocator))
       local wbt1p = forest:makewbtmap()
       for i = 1, 240 do
         wbt1p = wbt1p:insert(i,-i) -- creates garbage
+        -- debug: using this instead of the line above and without the `collectgarbage` above causes a crash... UGH TODO
+        --local wbt2p = wbt1p:insert(i,-i)
+        --wbt1p = wbt2p -- creates garbage
+        --
         expect.equal(#wbt1p, i)
       end
       expect.equal(wbt1p:getordefault(42,-999), -42)
       expect.equal(wbt1p:getordefault(222,-999), -222)
       collectgarbage() -- make sure we go through a gc cycle to test:
-      collectgarbage() -- make sure we go through a gc cycle to test:
-      --expect.equal(#forest, 1) -- gc is stubborny holding on to two nodes, the initial empty tree and the final tree
-      expect.truthy(#forest <= 2)
+      expect.equal(#forest, 1)
       --PRINTF!("Forest size: %d\n", #forest)
     end)
 
+    -- Here and in revpairs I "cheat" and stack allocate `forest`, but make
+    -- sure to `destroy` all `wbtmapT`s
     nester.it('pairs', function()
       local forest: wbtforest(integer, integer)
       local wbt1 = forest:makewbtmap() -- : wbtmapT
@@ -90,6 +102,7 @@ nester.describe('wbtforest', function()
         expect.equal(v, -i)
         i = i + 1
       end
+      wbt1:destroy()
     end)
 
     nester.it('revpairs', function()
@@ -110,6 +123,7 @@ nester.describe('wbtforest', function()
         expect.equal(v, -i)
         i = i - 1
       end
+      wbt1:destroy()
     end)
 
   end)
