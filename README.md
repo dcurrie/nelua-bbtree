@@ -50,7 +50,7 @@ Department of Applied Mathematics Charles University in Prague, Czech Republic
 
 ### Documentation
 
-See the doc directory. Here is the [API](https://github.com/dcurrie/nelua-bbtree/blob/master/doc/api.md)
+See the doc directory. Here is the [API](docs/api.md)
 
 ### Installation
 

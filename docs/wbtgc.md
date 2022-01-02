@@ -20,8 +20,6 @@ the weak pointer in the table is left, and it is removed from the table by the
 Nelua GC. Iterating the table identifies all the live tree roots. Without weak
 references, though, we needed another way.
 
-![wbtforest structure](https://github.com/dcurrie/nelua-bbtree/blob/main/docs/wbtforest_1.drawio.png)
-
 ![wbtforest structure](wbtforest_1.drawio.png)
 
 This is it.
