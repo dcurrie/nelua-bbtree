@@ -150,6 +150,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     node: uint32     -- index into span nodes, root of wbtree, WBTNIL for empty tree
   }
 
+  local wbttrailT <forwarddecl> =  @record{} -- circular references between wbttrailT and wbtforestT
+
   -- wbt map record defined when instantiating the generic `wbtmap`.
   local wbtforestT: type <nickname(#[string.format('wbtforest(%s, %s)',K,V)]#)> = @record{
     roots: wbtrootT, -- sentinel in list of tree roots
@@ -158,14 +160,22 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     nodes: span(wbtnodeT),
     marks: span(uint64), -- mark bits
     gcwip: span(uint32), -- gc roots maybe not in tree yet
+    trail: *wbttrailT,
     allocator: Allocator
+  }
+
+  -- we make an indirect reference to the wbtforestT to support disposing of the wbtforestT
+  -- possible while wbtmapT instances are still live
+  wbttrailT = @record{
+    forest: *wbtforestT, -- my forest
+    allocator: Allocator -- the allocator used to make the wbtmapT and wbttrailT instances
   }
 
   -- we make an indirect reference to the wbtrootT to support GC in lieu of weak sets
   -- wbt map record defined when calling `wbtforest:make`.
   local wbtmapT: type <nickname(#[string.format('wbtmap(%s, %s)',K,V)]#)> = @record{
-    root: *wbtrootT,    -- indirection to tree root
-    forest: *wbtforestT -- my forest
+    root: *wbtrootT,  -- indirection to tree root
+    trail: *wbttrailT -- the trail to my forest
   }
 
   ##[[
@@ -186,6 +196,12 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       self.roots.prev = &self.roots
       self.roots.next = &self.roots
       self.roots.node = WBTNIL
+      -- make trail
+      assert(self.trail == nilptr)
+      --self.trail = (@*wbttrailT)(self.allocator:xalloc0(#wbttrailT)) -- didn't typecheck
+      self.trail = self.allocator:new(@wbttrailT)
+      self.trail.forest = self
+      self.trail.allocator = self.allocator -- needed for destroy calls when forest gone
     end
   end
 
@@ -209,16 +225,22 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   ]]
   function wbtmapT:destroy(): void
     local iroot: *wbtrootT = self.root
+    local allocator = self.trail.allocator
     if iroot ~= nilptr then
       -- make idempotent
       self.root = nilptr
       -- unlink from list
       iroot.prev.next = iroot.next
       iroot.next.prev = iroot.prev
+      if iroot.next.next == iroot.next then
+        -- the list is now empty and the wbttrail can be destroyed
+        allocator:dealloc(self.trail)
+        --PRINTF!('Destroying trail\n')
+      end
       iroot.prev = nilptr
       iroot.next = nilptr
       iroot.node = WBTNIL
-      self.forest.allocator:dealloc(iroot)
+      allocator:dealloc(iroot)
     end
   end
 
@@ -243,6 +265,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     self.allocator:spandealloc(self.nodes)
     self.nodes = (@span(wbtnodeT))()
     self.rover = 0
+    self.trail.forest = nilptr -- delink this forest from its trail leaving trail in place
     -- We cannot delete the roots. It would leave dangling pointers for some wbtmapT records.
   end
 
@@ -527,7 +550,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     rootp.prev = &self.roots
     rootp.next.prev = rootp
     -- fill out result
-    wbt.forest = self
+    wbt.trail = self.trail
     wbt.root = rootp
     return wbt
   end
@@ -544,18 +567,33 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
   end
 
+  function wbtmapT:getforest() : *wbtforestT <inline>
+    local forest = self.trail.forest
+    if forest == nilptr then
+      panic("Attempt to access destroy'd wbtforest")
+    end
+    return forest
+  end
+
+
   function wbtmapT:insert(k: K, v: V): *wbtmapT
-    local node: uint32 = self.forest:insert(self.root.node, k, v)
-    self.forest.wip_n = 0 -- no more wip
-    return self.forest:makewbtmap_(node)
+    local forest = self:getforest()
+    if forest == nilptr then
+      panic("Attempt to insert into destroy'd wbtforest")
+    end
+    local node: uint32 = forest:insert(self.root.node, k, v)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
   end
 
   function wbtmapT:getordefault(k: K, default: V): V
-    return self.forest:getordefault(self.root.node, k, default)
+    local forest = self:getforest()
+    return forest:getordefault(self.root.node, k, default)
   end
 
   function wbtmapT:__len(): isize
-    return self.forest:wbtsize(self.root.node)
+    local forest = self:getforest()
+    return forest:wbtsize(self.root.node)
   end
 
     --[[ ************************ iterate ************************ ]]
@@ -644,9 +682,10 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
 
   -- Support using `pairs()` to iterate the wbtmapT container.
   function wbtmapT:__pairs(): (auto, wbtmap_iteratorT, K) <inline>
+    local forest = self:getforest()
     return wbtmap_iteratorT.next,
-           (@wbtmap_iteratorT){forest = self.forest,
-                               stack = self.forest.allocator:xspanalloc(uint32, INIT_CAPACITY),
+           (@wbtmap_iteratorT){forest = forest,
+                               stack = forest.allocator:xspanalloc(uint32, INIT_CAPACITY),
                                stidx = WBTNIL,
                                next = self.root.node},
            (@K)()
@@ -654,9 +693,10 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
 
   -- Support using `revpairs()` to iterate the wbtmapT container.
   function wbtmapT:revpairs(): (auto, wbtmap_iteratorT, K) <inline>
+    local forest = self:getforest()
     return wbtmap_iteratorT.revnext,
-           (@wbtmap_iteratorT){forest = self.forest,
-                               stack = self.forest.allocator:xspanalloc(uint32, INIT_CAPACITY),
+           (@wbtmap_iteratorT){forest = forest,
+                               stack = forest.allocator:xspanalloc(uint32, INIT_CAPACITY),
                                stidx = WBTNIL,
                                next = self.root.node},
            (@K)()
@@ -675,7 +715,8 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
              self:treetostring(root.lhs), root.key, self:treetostring(root.rhs))
   end
   function wbtmapT:treetostring(): string
-    return self.forest:treetostring(self.root.node)
+    local forest = self:getforest()
+    return forest:treetostring(self.root.node)
   end
 ## end
 
