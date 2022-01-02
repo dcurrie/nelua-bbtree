@@ -27,12 +27,13 @@ nester.describe('wbtforest', function()
       expect.equal(wbt3:getordefault(42,-999), -42)
       expect.equal(wbt3:getordefault(41,-999), -999)
       expect.equal(wbt2:getordefault(42,-999), -999)
+      forest:destroy()
     end)
 
     nester.it('grow manual', function()
-      local forest: wbtforest(integer, integer, nil, GeneralAllocator)
+      local forest: wbtforest(integer, integer, nil, GeneralAllocator) <close>
       --PRINTF!("About to make\n")
-      local wbt1 <close> = forest:makewbtmap() -- <close> -- : *wbtmapT NG
+      local wbt1 <close> = forest:makewbtmap() -- : *wbtmapT NG?
       --PRINTF!("About to loop\n")
       for i = 1, 240 do
         local wbt2 = wbt1:insert(i,-i) -- : *wbtmapT
@@ -54,6 +55,9 @@ nester.describe('wbtforest', function()
       --PRINTF!("240 inserts; sizes... nodes: %d marks %d gcwip: %d\n"
       --          , #forest.nodes, #forest.marks, #forest.gcwip)
       --for k,v in pairs(wbt1) do PRINTF!("k: %d v: %d\n", k, v) end
+      --wbt1:destroy()
+      --PRINTF!("forest %p <- %p -> %p\n", forest.roots.prev, &forest.roots, forest.roots.next)
+      --forest:destroy()--== don't do this if <close> used above!
     end)
 
 
@@ -62,24 +66,32 @@ nester.describe('wbtforest', function()
     -- linked list of wbtrootTs point back at the now non-existant wbtrootT
     -- embedded in the `wbtforest` record. So, `new` must be used to allocate
     -- the `wbtforest`
-    nester.it('grow autogc', function()
+    nester.it('grow autogc 1', function()
       -- debug
       -- collectgarbage()
-      local forest = gc_allocator:new(@wbtforest(integer, integer, nil, GCAllocator))
-      local wbt1p = forest:makewbtmap()
-      for i = 1, 240 do
-        wbt1p = wbt1p:insert(i,-i) -- creates garbage
-        -- debug: using this instead of the line above and without the `collectgarbage` above caused a crash... UGH TODO? FIXED?
-        --local wbt2p = wbt1p:insert(i,-i)
-        --wbt1p = wbt2p -- creates garbage
-        --
-        expect.equal(#wbt1p, i)
+      do
+        local forest = gc_allocator:new(@wbtforest(integer, integer, nil, GCAllocator))
+        local wbt1p = forest:makewbtmap()
+        for i = 1, 240 do
+          wbt1p = wbt1p:insert(i,-i) -- creates garbage
+          -- debug: using this instead of the line above and without the `collectgarbage` above caused a crash... UGH TODO? FIXED?
+          --local wbt2p = wbt1p:insert(i,-i)
+          --wbt1p = wbt2p -- creates garbage
+          --
+          expect.equal(#wbt1p, i)
+        end
+        expect.equal(wbt1p:getordefault(42,-999), -42)
+        expect.equal(wbt1p:getordefault(222,-999), -222)
+        collectgarbage() -- make sure we go through a gc cycle to test:
+        expect.equal(#forest, 1)
+        --PRINTF!("forest %p <- %p -> %p\n", forest.roots.prev, &forest.roots, forest.roots.next)
+        --PRINTF!("Forest size: %d\n", #forest)
       end
-      expect.equal(wbt1p:getordefault(42,-999), -42)
-      expect.equal(wbt1p:getordefault(222,-999), -222)
-      collectgarbage() -- make sure we go through a gc cycle to test:
-      expect.equal(#forest, 1)
-      --PRINTF!("Forest size: %d\n", #forest)
+      collectgarbage() -- to trigger collection of forest and wbt1p
+    end)
+
+    nester.it('grow autogc 2', function()
+      collectgarbage() -- to trigger collection of forest and wbt1p from above
     end)
 
     -- Here and in revpairs I "cheat" and stack allocate `forest`, but make
