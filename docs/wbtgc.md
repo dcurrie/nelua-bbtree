@@ -20,9 +20,11 @@ the weak pointer in the table is left, and it is removed from the table by the
 Nelua GC. Iterating the table identifies all the live tree roots. Without weak
 references, though, we needed another way.
 
+## Forest Structure
+
 ![wbtforest structure](wbtforest_1.drawio.png)
 
-This is it.
+## Deallocated Forest with Live Trees
 
-
+![wbtforest structure](wbtforest_2.drawio.png)
 
