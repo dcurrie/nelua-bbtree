@@ -64,14 +64,14 @@ nester.describe('wbtforest', function()
     -- the `wbtforest`
     nester.it('grow autogc', function()
       -- debug
-      --collectgarbage()
+      -- collectgarbage()
       local forest = gc_allocator:new(@wbtforest(integer, integer, nil, GCAllocator))
       local wbt1p = forest:makewbtmap()
       for i = 1, 240 do
-        wbt1p = wbt1p:insert(i,-i) -- creates garbage
-        -- debug: using this instead of the line above and without the `collectgarbage` above causes a crash... UGH TODO
-        --local wbt2p = wbt1p:insert(i,-i)
-        --wbt1p = wbt2p -- creates garbage
+        --wbt1p = wbt1p:insert(i,-i) -- creates garbage
+        -- debug: using this instead of the line above and without the `collectgarbage` above caused a crash... UGH TODO? FIXED?
+        local wbt2p = wbt1p:insert(i,-i)
+        wbt1p = wbt2p -- creates garbage
         --
         expect.equal(#wbt1p, i)
       end

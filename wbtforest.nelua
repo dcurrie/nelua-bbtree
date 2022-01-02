@@ -455,7 +455,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   --[[ ************************ insert ************************ ]]
 
   function wbtforestT:insert(n: uint32, k: K, v: V): uint32
-    if n == WBTNIL then
+    if n >= #self.nodes --[[ == WBTNIL ]] then
       return self:newleaf(k, v)
     end
     local root = self.nodes[n]
