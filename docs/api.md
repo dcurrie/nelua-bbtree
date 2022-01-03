@@ -89,34 +89,32 @@ New instances of `wbtmapT` are also returned by functions that manipulate the tr
 | **revpairs**(self: wbtmapT) |
 | Used in `for k,v in wbt:revpairs() do` loops to iterate through the tree entries in reverse *key* order. |
 
-### Not implemented; coming soon: Set operation functions on *key,value* maps
+### Set operation functions on *key,value* maps
 
 | Set operation functions on *key,value* maps |
 |:---------------------|
-| **contains**(self: wbtmapT, key: K) -> bool |
+| **contains**(self: wbtmapT, key: K) -> boolean |
 | Returns `true` if `key` is in the tree `root` otherwise `false`. O(log N) |
-| **union**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> wbtmapT |
+| **union**(tree1: wbtmapT, tree2: wbtmapT) -> wbtmapT |
 | Returns the union of the sets represented by the keys in `tree1` and `tree2`.  When viewed as maps, returns the key,value pairs that appear in either tree; if a key appears in both trees, the value for that key is selected from `tree1`, so this function is asymmetrical for maps. If you need more control over how the values are selected for duplicate keys, see `unionmerge`. O(M + N) but if the minimum key of one tree is greater than the maximum key of the other tree then O(log M) where M is the size of the larger tree. |
-| **unionmerge**(tree1: BBTree<K,V>, tree2: BBTree<K,V>, merge: (K,V,V)->V) -> wbtmapT |
+| **unionmerge**(tree1: wbtmapT, tree2: wbtmapT, merge: (K,V,V)->V) -> wbtmapT |
 | Returns the union of the sets represented by the keys in `tree1` and `tree2`. When viewed as maps, returns the key,value pairs that appear in either tree; if a key appears in both trees, the value for that key is the result of the supplied `merge` function, which is passed the common key, and the values from `tree1` and `tree2` respectively. O(M + N) but if the minimum key of one tree is greater than the maximum key of the other tree then O(log M) where M is the size of the larger tree. |
-| **intersection**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> wbtmapT |
+| **intersection**(tree1: wbtmapT, tree2: wbtmapT) -> wbtmapT |
 | Returns the set intersection of `tree1` and `tree2`. In other words, returns the keys that are in both trees. When viewed as maps, returns the key,value pairs for keys that appear in both trees; the value each key is selected from `tree1`, so this function is asymmetrical for maps. If you need more comtrol over how the values are selected for duplicate keys, see `intersectionmerge`. O(M + N) |
-| **intersectionmerge**(tree1: BBTree<K,V>, tree2: BBTree<K,V>, merge: (K,V,V)->V) -> wbtmapT |
+| **intersectionmerge**(tree1: wbtmapT, tree2: wbtmapT, merge: (K,V,V)->V) -> wbtmapT |
 | Returns the set intersection of `tree1` and `tree2`. In other words, returns the keys that are in both trees. When viewed as maps, returns the key,value pairs for keys that appear in both trees; the value for each key is the result of the supplied `merge` function, which is passed the common key, and the values from `tree1` and `tree2` respectively.  O(M + N) |
-| **difference**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> wbtmapT |
+| **difference**(tree1: wbtmapT, tree2: wbtmapT) -> wbtmapT |
 | Returns the asymmetric set difference between `tree1` and `tree2`. In other words, returns the keys that are in `tree1`, but not in `tree2`. O(M + N) |
-| **symmetricdifference**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> wbtmapT |
+| **symmetricdifference**(tree1: wbtmapT, tree2: wbtmapT) -> wbtmapT |
 | Returns the symmetric set difference between `tree1` and `tree2`. In other words, returns the keys that are in `tree1`, but not in `tree2`, union the keys that are in `tree2` but not in `tree1`.  O(M + N) |
-| **issubset**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> bool |
+| **issubset**(tree1: wbtmapT, tree2: wbtmapT) -> boolean |
 | Returns true iff the keys in `tree1` form a subset of the keys in `tree2`. In other words, if all the keys that are in `tree1` are also in `tree2`. O(N) where N is `len(tree1)`. Use `ispropersubset` instead to determines that there are keys in `tree2` that are not in `tree1`. |
-| **ispropersubset**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> bool |
+| **ispropersubset**(tree1: wbtmapT, tree2: wbtmapT) -> boolean |
 | Returns true iff the keys in `tree1` form a proper subset of the keys in `tree2`. In other words, if all the keys that are in `tree1` are also in `tree2`, but there are keys in `tree2` that are not in `tree1`.  O(N) where N is `len(tree1)` |
-| **setequal**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> bool |
+| **setequal**(tree1: wbtmapT, tree2: wbtmapT) -> boolean |
 | Returns true if both `tree1` and `tree2` have the same keys. O(N) where N is `len(tree1)` |
-| **disjoint**(tree1: BBTree<K,V>, tree2: BBTree<K,V>) -> bool |
+| **disjoint**(tree1: wbtmapT, tree2: wbtmapT) -> boolean |
 | Returns true iff `tree1` and `tree2` have no keys in common. O(N) where N is `len(tree1)` |
-| **toset**(keys: [K]) -> BBTree<K,bool> |
-| Creates a BBTree set that contains the given `keys` with value `true`. |
 
 ### Not implemented; TBD if they will be
 
@@ -130,3 +128,5 @@ New instances of `wbtmapT` are also returned by functions that manipulate the tr
 | Applies function `f` to each key and corresponding value of `root`, discarding the results. |
 | **map**(self: wbtmapT, f: (K,V,V)->V) -> wbtmapT |
 | Returns a new tree with the keys of tree `root` and values that are the result of applying `f` to each key and corresponding value in `root`. |
+| **toset**(keys: [K]) -> BBTree<K,bool> |
+| Creates a BBTree set that contains the given `keys` with value `true`. |

@@ -770,6 +770,284 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
+  --[[ ************************ set operations ************************ ]]
+
+  -- This is Adams's concat3
+  --
+  function wbtforestT:join3(key: K, val: V, lhs: uint32, rhs: uint32): uint32
+    local result = WBTNIL
+    if lhs == WBTNIL then
+      result = self:insert(rhs, key, val)
+    elseif rhs == WBTNIL then
+      result = self:insert(lhs, key, val)
+    else
+      local sl = self:nodesize(lhs)
+      local sr = self:nodesize(rhs)
+      if (OMEGA * sl) < sr then
+        result = self:balance(self:join3(key, val, lhs, self.nodes[rhs].lhs),
+                              self.nodes[rhs].key, self.nodes[rhs].val, self.nodes[rhs].rhs)
+      elseif (OMEGA * sr) < sl then
+        result = self:balance(self.nodes[lhs].lhs, self.nodes[lhs].key, self.nodes[lhs].val,
+                              self:join3(key, val, self.nodes[lhs].rhs, rhs))
+      else
+        result = self:newnode(lhs, key, val, rhs)
+      end
+    end
+    return result
+  end
+
+  -- This is Adams's concat
+  --
+  function wbtforestT:join(lhs: uint32, rhs: uint32): uint32
+    local result = WBTNIL
+    if lhs == WBTNIL then
+      result = rhs
+    elseif rhs == WBTNIL then
+      result = lhs
+    else
+      local key, val, rhsp = self:extractMin(rhs)
+      result = self:join3(key, val, lhs, rhsp)
+    end
+    return result
+  end
+
+  -- This is Adams's split_lt and split_gt combined into one function, along with contains(root, key)
+  --
+  function wbtforestT:split(key: K, root: uint32): (uint32, boolean, uint32)
+    if root == WBTNIL then
+      return root, false, root
+    else
+      local dif = #[CompareFunc]#(key, self.nodes[root].key)
+      switch dif
+      case -1 then
+        local l, b, r = self:split(key, self.nodes[root].lhs)
+        return l, b, self:join3(self.nodes[root].key, self.nodes[root].val, r, self.nodes[root].rhs)
+      case 1 then
+        local l, b, r = self:split(key, self.nodes[root].rhs)
+        return self:join3(self.nodes[root].key, self.nodes[root].val, self.nodes[root].lhs, l), b, r
+      else -- key and self.nodes[node].key are eq
+        return self.nodes[root].lhs, true, self.nodes[root].rhs
+      end
+    end
+  end
+
+  function wbtforestT:splitMerge(key: K, val: V, root: uint32, merge: function(k: K, v1: V, v2: V): V): (uint32, boolean, V, uint32)
+    if root == WBTNIL then
+      return root, false, val, root
+    else
+      local dif = #[CompareFunc]#(key, self.nodes[root].key)
+      switch dif
+      case -1 then
+        local l, b, val, r = self:splitMerge(key, val, self.nodes[root].lhs, merge)
+        return l, b, val, self:join3(self.nodes[root].key, self.nodes[root].val, r, self.nodes[root].rhs)
+      case 1 then
+        local l, b, val, r = self:splitMerge(key, val, self.nodes[root].rhs, merge)
+        return self:join3(self.nodes[root].key, self.nodes[root].val, self.nodes[root].lhs, l), b, val, r
+      else -- key and self.nodes[node].key are eq
+        return self.nodes[root].lhs, true, merge(key, val, self.nodes[root].val), self.nodes[root].rhs
+      end
+    end
+  end
+
+  function wbtforestT:union(tree1: uint32, tree2: uint32): uint32
+    -- Returns the union of the sets represented by the keys in `tree1` and `tree2`.
+    -- When viewed as maps, returns the key,value pairs that appear in either tree; if
+    -- a key appears in both trees, the value for that key is selected from `tree1`, so
+    -- this function is asymmetrical for maps. If you need more comtrol over how the
+    -- values are selected for duplicate keys, see `unionmerge`. O(M + N) but if the minimum
+    -- key of one tree is greater than the maximum key of the other tree then O(log M)
+    -- where M is the size of the larger tree.
+    if tree1 == WBTNIL then
+      return tree2
+    elseif tree2 == WBTNIL then
+      return tree1
+    else
+      local l, b, r = self:split(self.nodes[tree1].key, tree2)
+      return self:join3(self.nodes[tree1].key, self.nodes[tree1].val,
+                        self:union(self.nodes[tree1].lhs, l),
+                        self:union(self.nodes[tree1].rhs, r))
+    end
+  end
+
+  function wbtforestT:unionmerge(tree1: uint32, tree2: uint32, merge: function(k: K, v1: V, v2: V): V): uint32
+    -- Returns the union of the sets represented by the keys in `tree1` and `tree2`.
+    -- When viewed as maps, returns the key,value pairs that appear in either tree; if
+    -- a key appears in both trees, the value for that key is the result of the supplied
+    -- `merge` function, which is passed the common key, and the values from `tree1` and
+    -- `tree2` respectively.  O(M + N) but if the minimum
+    -- key of one tree is greater than the maximum key of the other tree then O(log M)
+    -- where M is the size of the larger tree.
+    if tree1 == WBTNIL then
+      return tree2
+    elseif tree2 == WBTNIL then
+      return tree1
+    else
+      local l, b, v, r = self:splitMerge(self.nodes[tree1].key, self.nodes[tree1].val, tree2, merge)
+      return self:join3(self.nodes[tree1].key, v,
+                        self:unionmerge(self.nodes[tree1].lhs, l, merge),
+                        self:unionmerge(self.nodes[tree1].rhs, r, merge))
+    end
+  end
+
+  function wbtforestT:difference(tree1: uint32, tree2: uint32): uint32
+    -- Returns the asymmetric set difference between `tree1` and `tree2`. In other words,
+    -- returns the keys that are in `tree1`, but not in `tree2`.  O(M + N)
+    if tree1 == WBTNIL or tree2 == WBTNIL then
+      return tree1
+    else
+      local l, b, r = self:split(self.nodes[tree2].key, tree1)
+      return self:join(self:difference(l, self.nodes[tree2].lhs),
+                       self:difference(r, self.nodes[tree2].rhs))
+    end
+  end
+
+  function wbtforestT:symmetricdifference(tree1: uint32, tree2: uint32): uint32
+    -- Returns the symmetric set difference between `tree1` and `tree2`. In other words,
+    -- returns the keys that are in `tree1`, but not in `tree2`, union the keys that are in
+    -- `tree2` but not in `tree1`.  O(M + N)
+    if tree1 == WBTNIL then
+      return tree2
+    elseif tree2 == WBTNIL then
+      return tree1
+    else
+      local l, b, r = self:split(self.nodes[tree2].key, tree1)
+      if b then
+        return self:join(self:symmetricdifference(l, self.nodes[tree2].lhs),
+                         self:symmetricdifference(r, self.nodes[tree2].rhs))
+      else
+        return self:join3(self.nodes[tree2].key, self.nodes[tree2].val,
+                         self:symmetricdifference(l, self.nodes[tree2].lhs),
+                         self:symmetricdifference(r, self.nodes[tree2].rhs))
+      end
+    end
+  end
+
+  function wbtforestT:contains(root: uint32, key: K): boolean
+    -- Returns `true` if the `key` is in the tree `root`
+    -- otherwise `false`. O(log N)
+    local node = root
+    while node ~= WBTNIL do
+      local dif = #[CompareFunc]#(key, self.nodes[node].key)
+      switch dif
+      case -1 then
+        node = self.nodes[node].lhs
+      case  1 then
+        node = self.nodes[node].rhs
+      else -- key and self.nodes[node].key are eq
+        return true -- break
+      end
+    end
+    return false
+  end
+
+  function wbtforestT:intersection(tree1: uint32, tree2: uint32): uint32
+    -- Returns the set intersection of `tree1` and `tree2`. In other words, returns the keys
+    -- that are in both trees.
+    -- When viewed as maps, returns the key,value pairs for keys that appear in both trees;
+    -- the value each key is selected from `tree1`, so
+    -- this function is asymmetrical for maps. If you need more comtrol over how the
+    -- values are selected for duplicate keys, see `uintersectionmerge`. O(M + N)
+    if tree1 == WBTNIL then
+      return tree1
+    elseif tree2 == WBTNIL then
+      return tree2
+    else
+      local l, b, r = self:split(self.nodes[tree1].key, tree2)
+      if b then
+        return self:join3(self.nodes[tree1].key, self.nodes[tree1].val,
+                          self:intersection(self.nodes[tree1].lhs, l),
+                          self:intersection(self.nodes[tree1].rhs, r))
+      else
+        return self:join(self:intersection(self.nodes[tree1].lhs, l),
+                         self:intersection(self.nodes[tree1].rhs, r))
+      end
+    end
+  end
+
+  function wbtforestT:intersectionmerge(tree1: uint32, tree2: uint32, merge: function(k: K, v1: V, v2: V): V): uint32
+    -- Returns the set intersection of `tree1` and `tree2`. In other words, returns the keys
+    -- that are in both trees.
+    -- When viewed as maps, returns the key,value pairs for keys that appear in both trees;
+    -- the value for each key is the result of the supplied
+    -- `merge` function, which is passed the common key, and the values from `tree1` and
+    -- `tree2` respectively.  O(M + N)
+    if tree1 == WBTNIL then
+      return tree1
+    elseif tree2 == WBTNIL then
+      return tree2
+    else
+      local l, b, v, r = self:splitMerge(self.nodes[tree1].key, self.nodes[tree1].val, tree2, merge)
+      if b then
+        return self:join3(self.nodes[tree1].key, v,
+                          self:intersectionmerge(self.nodes[tree1].lhs, l, merge),
+                          self:intersectionmerge(self.nodes[tree1].rhs, r, merge))
+      else
+        return self:join(self:intersectionmerge(self.nodes[tree1].lhs, l, merge),
+                         self:intersectionmerge(self.nodes[tree1].rhs, r, merge))
+      end
+    end
+  end
+
+  function wbtforestT:issubset(tree1: uint32, tree2: uint32): boolean
+    -- Returns true iff the keys in `tree1` form a subset of the keys in `tree2`. In other words,
+    -- if all the keys that are in `tree1` are also in `tree2`. O(N) where N is `len(tree1)`
+    -- Use `ispropersubset` instead to determins that there are keys in `tree2` that are not in `tree1`.
+    if tree1 == WBTNIL then
+      return true
+    elseif self:nodesize(tree1) > self:nodesize(tree2) then
+      return false
+    else
+      -- tree2 is not nil or else the above length test would have been true
+      local dif = #[CompareFunc]#(self.nodes[tree1].key, self.nodes[tree2].key)
+      switch dif
+      case -1 then
+        return self:issubset(self.nodes[tree1].lhs, self.nodes[tree2].lhs) and
+                self:contains(tree2, self.nodes[tree1].key) and
+                self:issubset(self.nodes[tree1].rhs, tree2)
+      case 1 then
+        return self:issubset(self.nodes[tree1].rhs, self.nodes[tree2].rhs) and
+                self:contains(tree2, self.nodes[tree1].key) and
+                self:issubset(self.nodes[tree1].lhs, tree2)
+      else -- self.nodes[tree1].key and self.nodes[tree2].key are eq
+        return self:issubset(self.nodes[tree1].lhs, self.nodes[tree2].lhs) and
+                self:issubset(self.nodes[tree1].rhs, self.nodes[tree2].rhs)
+      end
+    end
+  end
+
+  function wbtforestT:disjoint(tree1: uint32, tree2: uint32): boolean
+    -- Returns true iff `tree1` and `tree2` have no keys in common. O(N) where N is
+    -- `len(tree1)`
+    if (tree1 ~= WBTNIL) and (tree2 ~= WBTNIL) then
+      local dif = #[CompareFunc]#(self.nodes[tree1].key, self.nodes[tree2].key)
+      switch dif
+      case -1 then
+        if not self:disjoint(self.nodes[tree1].lhs, self.nodes[tree2].lhs) then return false end
+        if self:contains(tree2, self.nodes[tree1].key) then return false end
+        return self:disjoint(self.nodes[tree1].rhs, tree2)
+      case 1 then
+        if not self:disjoint(self.nodes[tree1].rhs, self.nodes[tree2].rhs) then return false end
+        if self:contains(tree2, self.nodes[tree1].key) then return false end
+        return self:disjoint(self.nodes[tree1].lhs, tree2)
+      else -- self.nodes[tree1].key and self.nodes[tree2].key are eq
+        return false
+      end
+    end
+    return true
+  end
+
+  function wbtforestT:ispropersubset(tree1: uint32, tree2: uint32): boolean
+    -- Returns true iff the keys in `tree1` form a proper subset of the keys in `tree2`.
+    -- In other words, if all the keys that are in `tree1` are also in `tree2`, but there are
+    -- keys in `tree2` that are not in `tree1`.  O(N) where N is `len(tree1)`
+    return self:issubset(tree1, tree2) and self:nodesize(tree1) < self:nodesize(tree2)
+  end
+
+  function wbtforestT:setequal(tree1: uint32, tree2: uint32): boolean
+    -- Returns true if both `tree1` and `tree2` have the same keys.
+    return self:nodesize(tree1) == self:nodesize(tree2) and self:issubset(tree1, tree2)
+  end
+
   --[[ ************************ wbtmap ************************ ]]
 
   function wbtforestT:makewbtmap_(node: uint32): *wbtmapT
@@ -793,13 +1071,15 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return self:makewbtmap_(WBTNIL)
   end
 
-  function wbtforestT:wbtsize(node: uint32)
+--[[ same as nodesize
+  function wbtforestT:wbtsize(node: uint32): uint32
     if node < #self.nodes then
       return self.nodes[node].siz
     else
       return 0
     end
   end
+]]
 
   function wbtmapT:getforest() : *wbtforestT <inline>
     local forest = self.trail.forest
@@ -872,12 +1152,89 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return forest:getrank(self.root.node, k, default)
   end
 
-  function wbtmapT:__len(): isize
+  function wbtmapT:contains(k: K): boolean
     local forest = self:getforest()
-    return forest:wbtsize(self.root.node)
+    return forest:contains(self.root.node, k)
   end
 
-    --[[ ************************ iterate ************************ ]]
+  function wbtmapT:getforests(wbt2: *wbtmapT): *wbtforestT <inline>
+    local forest = self.trail.forest
+    if forest == nilptr then
+      panic("Attempt to access destroy'd wbtforest")
+    end
+    assert(forest == wbt2.trail.forest, "Attempt to combine wbtmapTs from different wbtforestTs")
+    return forest
+  end
+
+  function wbtmapT:union(wbt2: *wbtmapT): *wbtmapT
+    local forest = self:getforests(wbt2)
+    local node: uint32 = forest:union(self.root.node, wbt2.root.node)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:unionmerge(wbt2: *wbtmapT, merge: function(k: K, v1: V, v2: V): V): *wbtmapT
+    local forest = self:getforests(wbt2)
+    local node: uint32 = forest:unionmerge(self.root.node, wbt2.root.node, merge)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:difference(wbt2: *wbtmapT): *wbtmapT
+    local forest = self:getforests(wbt2)
+    local node: uint32 = forest:difference(self.root.node, wbt2.root.node)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:symmetricdifference(wbt2: *wbtmapT): *wbtmapT
+    local forest = self:getforests(wbt2)
+    local node: uint32 = forest:symmetricdifference(self.root.node, wbt2.root.node)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:intersection(wbt2: *wbtmapT): *wbtmapT
+    local forest = self:getforests(wbt2)
+    local node: uint32 = forest:intersection(self.root.node, wbt2.root.node)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:intersectionmerge(wbt2: *wbtmapT, merge: function(k: K, v1: V, v2: V): V): *wbtmapT
+    local forest = self:getforests(wbt2)
+    local node: uint32 = forest:intersectionmerge(self.root.node, wbt2.root.node, merge)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:issubset(wbt2: *wbtmapT): boolean
+    local forest = self:getforests(wbt2)
+    return forest:issubset(self.root.node, wbt2.root.node)
+  end
+
+  function wbtmapT:ispropersubset(wbt2: *wbtmapT): boolean
+    local forest = self:getforests(wbt2)
+    return forest:ispropersubset(self.root.node, wbt2.root.node)
+  end
+
+  function wbtmapT:setequal(wbt2: *wbtmapT): boolean
+    local forest = self:getforests(wbt2)
+    return forest:setequal(self.root.node, wbt2.root.node)
+  end
+
+  function wbtmapT:disjoint(wbt2: *wbtmapT): boolean
+    local forest = self:getforests(wbt2)
+    return forest:disjoint(self.root.node, wbt2.root.node)
+  end
+
+
+function wbtmapT:__len(): isize
+    local forest = self:getforest()
+    return forest:nodesize(self.root.node)
+  end
+
+  --[[ ************************ iterate ************************ ]]
 
   -- wbtree iterator
   local wbtmap_iteratorT: type = @record{
