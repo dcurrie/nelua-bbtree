@@ -518,7 +518,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   --[[ ************************ lookup ************************ ]]
 
   -- default is returned is key is not in tree
-  function wbtforestT:getordefault(root: uint32, key: K, default: V): V
+  function wbtforestT:get(root: uint32, key: K, default: V): V
     -- Retrieves the value for `key` in the tree `root` iff `key` is in the tree.
     -- Otherwise, `default` is returned. O(log N)
     local result = default
@@ -594,7 +594,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
-  function wbtforestT:delMin(root: uint32): uint32
+  function wbtforestT:delmin(root: uint32): uint32
     -- Delete the minimum element from tree `root`. O(log N)
     local result = WBTNIL
     if root == WBTNIL then
@@ -606,7 +606,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
-  function wbtforestT:delMax(root: uint32): uint32
+  function wbtforestT:delmax(root: uint32): uint32
     -- Delete the maximum element from tree `root`. O(log N)
     local result = WBTNIL
     if root == WBTNIL then
@@ -618,7 +618,159 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return result
   end
 
-  --[[ ************************ wbtree ************************ ]]
+  --[[ ************************ ranked lookup ************************ ]]
+
+  function wbtforestT:getNth(root: uint32, index: integer, kdefault: K, vdefault: V): (K, V)
+    -- Get the key,value pair of the 0-based `index` key in the tree `root` when index is
+    -- positive and less than the tree length. Or get the tree length plus `index` key in
+    -- the tree `root` when the `index` is negative and greater than the negative tree length.
+    -- Otherwise, `kdefault, vdefault` is returned. O(log N)
+    local treesize: integer = self:nodesize(root) -- convert from uint32 for signed op
+    local uindex: uint32 = 0
+    local node: uint32 = root
+    if (index < treesize) and (index >= (-treesize)) then
+      if index < 0 then
+          uindex = (@uint32)(treesize + index) -- when negative, reverse index from end rather than inorder
+      else
+          uindex = (@uint32)(index) -- all set
+      end
+      while self.nodes[node] ~= WBTNIL do
+        local lhssize = self:nodesize(self.nodes[node].lhs)
+        if uindex < lhssize then
+          node = self.nodes[node].lhs
+        elseif uindex > lhssize then
+          uindex = uindex - (lhssize + 1)
+          node = self.nodes[node].rhs
+        else -- we are there!
+          return self.nodes[node].key, self.nodes[node].val
+        end
+      end
+    end
+    -- else index is out of range; default is returned
+    return kdefault, vdefault
+  end
+
+  function wbtforestT:getmin(root: uint32, kdefault: K, vdefault: V): (K, V)
+    -- Retrieves the key,value pair with the smallest key in the tree `root`
+    -- For an empty tree `default` is returned. O(log N)
+    local node = root
+    if self.nodes[node] == WBTNIL then
+      return kdefault, vdefault
+    else
+      while self.nodes[node].lhs ~= WBTNIL do
+          node = self.nodes[node].lhs
+      end
+      return self.nodes[node].key, self.nodes[node].val
+    end
+  end
+
+  function wbtforestT:getmax(root: uint32, kdefault: K, vdefault: V): (K, V)
+    -- Retrieves the key,value pair with the largest key in the tree `root`
+    -- For an empty tree `default` is returned. O(log N)
+    local node = root
+    if self.nodes[node] == WBTNIL then
+      return kdefault, vdefault
+    else
+      while self.nodes[node].rhs ~= WBTNIL do
+          node = self.nodes[node].rhs
+      end
+      return self.nodes[node].key, self.nodes[node].val
+    end
+  end
+
+  function wbtforestT:getKV(node: uint32, defaultk: K, defaultv: V): (K, V) <inline>
+    if self.nodes[node] == WBTNIL then
+        return defaultk, defaultv
+    else
+        return self.nodes[node].key, self.nodes[node].val
+    end
+  end
+
+  function wbtforestT:getnext(root: uint32, key: K, defaultk: K, defaultv: V): (K,V)
+    -- Returns the key,value pair with smallest key > `key`.
+    -- It is almost inorder successor, but it also works when `key` is not present.
+    -- If there is no such successor key in the tree, `default` is returned. O(log N)
+    local last_lhs_from: uint32 = WBTNIL
+    local node = root
+    while true do
+      if self.nodes[node] == WBTNIL then
+          return self:getKV(last_lhs_from, defaultk, defaultv) -- key not found
+      else
+        local dif = #[CompareFunc]#(key, self.nodes[node].key)
+        switch dif
+        case -1 then
+          last_lhs_from = node
+          node = self.nodes[node].lhs
+        case 1 then
+          node = self.nodes[node].rhs
+        else -- key and self.nodes[node].key are eq
+          -- return value from min node of rhs subtree, or from last_lhs_from if none
+          if self.nodes[node].rhs == WBTNIL then
+            return self:getKV(last_lhs_from, defaultk, defaultv)
+          else
+            return self:getmin(self.nodes[node].rhs, defaultk, defaultv)
+          end
+        end
+      end
+    end
+    return defaultk, defaultv -- can't happen, but compiler doesn't know
+  end
+
+  function wbtforestT:getprev(root: uint32, key: K, defaultk: K, defaultv: V): (K,V)
+    -- Returns the key,value pair with largest key < `key`.
+    -- It is almost inorder predecessor, but it also works when `key` is not present.
+    -- If there is no such predecessor key in the tree, `default` is returned. O(log N)
+    local last_rhs_from: uint32 = WBTNIL
+    local node = root
+    while true do
+      if self.nodes[node] == WBTNIL then
+          return self:getKV(last_rhs_from, defaultk, defaultv) -- key not found
+      else
+        local dif = #[CompareFunc]#(key, self.nodes[node].key)
+        switch dif
+        case -1 then
+          node = self.nodes[node].lhs
+        case 1 then
+          last_rhs_from = node
+          node = self.nodes[node].rhs
+        else -- key and self.nodes[node].key are eq
+          -- return value from max node of lhs subtree, or from last_rhs_from if none
+          if self.nodes[node].lhs == WBTNIL then
+            return self:getKV(last_rhs_from, defaultk, defaultv)
+          else
+            return self:getmax(self.nodes[node].lhs, defaultk, defaultv)
+          end
+        end
+      end
+    end
+    return defaultk, defaultv -- can't happen, but compiler doesn't know
+  end
+
+  --[[ ************************ rank ************************ ]]
+
+  function wbtforestT:rank(root: uint32, key: K, default: integer): integer
+    -- Retrieves the 0-based index of `key` in the tree `root` iff `key` is in the tree.
+    -- Otherwise, `default` is returned. O(log N)
+    local result = default
+    local n: integer = 0
+    local node = root
+    while self.nodes[node] ~= WBTNIL do
+      local dif = #[CompareFunc]#(key, self.nodes[node].key)
+      switch dif
+      case -1 then
+        node = self.nodes[node].lhs
+      case 1 then
+        n = n + 1 + self:nodesize(self.nodes[node].lhs)
+        node = self.nodes[node].rhs
+      else -- key and self.nodes[node].key are eq
+        result = n + self:nodesize(self.nodes[node].lhs)
+        return result -- break from loop
+      end
+    end
+    return result
+  end
+
+  --[[ ************************ wbtmap ************************ ]]
 
   function wbtforestT:makewbtmap_(node: uint32): *wbtmapT
     local wbt: *wbtmapT =  (@*wbtmapT)(self.allocator:new(@wbtmapT))
@@ -657,7 +809,6 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return forest
   end
 
-
   function wbtmapT:insert(k: K, v: V): *wbtmapT
     local forest = self:getforest()
     if forest == nilptr then
@@ -668,9 +819,9 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     return forest:makewbtmap_(node)
   end
 
-  function wbtmapT:getordefault(k: K, default: V): V
+  function wbtmapT:get(k: K, default: V): V
     local forest = self:getforest()
-    return forest:getordefault(self.root.node, k, default)
+    return forest:get(self.root.node, k, default)
   end
 
   function wbtmapT:__len(): isize

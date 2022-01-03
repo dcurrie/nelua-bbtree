@@ -24,9 +24,9 @@ nester.describe('wbtforest', function()
       local wbt2 <close> = forest:makewbtmap() -- : wbtmapT
       expect.equal(#forest, 2)
       local wbt3 <close> = wbt2:insert(42,-42)
-      expect.equal(wbt3:getordefault(42,-999), -42)
-      expect.equal(wbt3:getordefault(41,-999), -999)
-      expect.equal(wbt2:getordefault(42,-999), -999)
+      expect.equal(wbt3:get(42,-999), -42)
+      expect.equal(wbt3:get(41,-999), -999)
+      expect.equal(wbt2:get(42,-999), -999)
       forest:destroy()
     end)
 
@@ -48,8 +48,8 @@ nester.describe('wbtforest', function()
         --PRINTF!("i %d wbt1 siz %d\n", i, #wbt1)
         expect.equal(#wbt1, i)
       end
-      expect.equal(wbt1:getordefault(42,-999), -42)
-      expect.equal(wbt1:getordefault(222,-999), -222)
+      expect.equal(wbt1:get(42,-999), -42)
+      expect.equal(wbt1:get(222,-999), -222)
       --PRINTF!("%s\n", wbt1:treetostring())
       --PRINTF!("gcwip size: %d\n", #forest.gcwip)
       --PRINTF!("240 inserts; sizes... nodes: %d marks %d gcwip: %d\n"
@@ -80,8 +80,8 @@ nester.describe('wbtforest', function()
           --
           expect.equal(#wbt1p, i)
         end
-        expect.equal(wbt1p:getordefault(42,-999), -42)
-        expect.equal(wbt1p:getordefault(222,-999), -222)
+        expect.equal(wbt1p:get(42,-999), -42)
+        expect.equal(wbt1p:get(222,-999), -222)
         collectgarbage() -- make sure we go through a gc cycle to test:
         expect.equal(#forest, 1)
         --PRINTF!("forest %p <- %p -> %p\n", forest.roots.prev, &forest.roots, forest.roots.next)

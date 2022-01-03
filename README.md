@@ -27,7 +27,7 @@ BBTrees, also known as Weight Balanced Trees, or Adams Trees, are a persistent d
 with a nice combination of properties:
 
 * Generic (parameterized) key,value map
-* Insert (`insert`), lookup (`getordefault`), and delete (`delete`) in O(log(N)) time
+* Insert (`insert`), lookup (`get`), and delete (`delete`) in O(log(N)) time
 * Key-ordered iterators (`pairs` and `revpairs`)
 * Lookup by relative position from beginning or end (`getnth`) in O(log(N)) time
 * Get the position (`rank`) by key in O(log(N)) time
@@ -40,11 +40,11 @@ but instead always yield a new updated structure. When insertions or deletions t
 attempt to reuse as much of the old structure as possible.
 
 Because Nelua has an included garbage collector, Nelua programs can run without Nelua's gc. To
-accommodate them, `wbtforest` manages its own heap of nodes and list of tree roots. Operations on
-trees always return a new root, called a `wbtree`. In garbage collected environments, the `__gc`
-metamethods on `wbtree` and `wbtforest` will clean up internal `wbtforest` resources. In non-gc
-environments, the owner of the `wbtforest` and its `wbtree`s is responsible for calling
-`wbtforest.destroy` and `wbtree.destroy`, which are also connected to
+accommodate them, `wbtforestT` manages its own heap of nodes and list of tree roots. Operations on
+trees always return a new root, called a `wbtmapT`. In garbage collected environments, the `__gc`
+metamethods on `wbtmapT` and `wbtforestT` will clean up internal `wbtforestT` resources. In non-gc
+environments, the owner of the `wbtforestT` and its `wbtmapT`s is responsible for calling
+`wbtforestT`'s and `wbtmapT`'s `destroy` methods, which are also connected to
 `__close` metamethods for convenience.
 
 ## BBTree Credits
