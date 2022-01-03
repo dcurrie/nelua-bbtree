@@ -558,6 +558,66 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     end
   end
 
+  function wbtforestT:glue(lhs: uint32, rhs: uint32): uint32
+    local result: uint32 = WBTNIL
+    if lhs == WBTNIL then
+        result = rhs
+    elseif rhs == WBTNIL then
+        result = lhs
+    elseif self:nodesize(lhs) > self:nodesize(rhs) then
+        local maxk, maxv, lhsp = self:extractMax(lhs)
+        result = self:newnode(lhsp, maxk, maxv, rhs)
+    else
+        local mink, minv, rhsp = self:extractMin(rhs)
+        result = self:newnode(lhs, mink, minv, rhsp)
+    end
+    return result
+  end
+
+  function wbtforestT:delete(root: uint32, key: K): uint32
+    -- Deletes `key` from tree `root`. Does nothing if the key does not exist.
+    -- O(log N)
+    local result = WBTNIL
+    if root == WBTNIL then
+        result = root
+    else
+      local dif = #[CompareFunc]#(key, self.nodes[root].key)
+      switch dif
+      case -1 then
+        result = self:balance(self:delete(self.nodes[root].lhs, key), self.nodes[root].key, self.nodes[root].val, self.nodes[root].rhs)
+      case 1 then
+        result = self:balance(self.nodes[root].lhs, self.nodes[root].key, self.nodes[root].val, self:delete(self.nodes[root].rhs, key))
+      else -- key and self.nodes[root].key are eq
+        result = self:glue(self.nodes[root].lhs, self.nodes[root].rhs)
+      end
+    end
+    return result
+  end
+
+  function wbtforestT:delMin(root: uint32): uint32
+    -- Delete the minimum element from tree `root`. O(log N)
+    local result = WBTNIL
+    if root == WBTNIL then
+        result = root
+    else
+        local mink, minv, node = self:extractMin(root)
+        result = node
+    end
+    return result
+  end
+
+  function wbtforestT:delMax(root: uint32): uint32
+    -- Delete the maximum element from tree `root`. O(log N)
+    local result = WBTNIL
+    if root == WBTNIL then
+        result = root
+    else
+        local maxk, maxv, node = self:extractMax(root)
+        result = node
+    end
+    return result
+  end
+
   --[[ ************************ wbtree ************************ ]]
 
   function wbtforestT:makewbtmap_(node: uint32): *wbtmapT
