@@ -65,15 +65,15 @@ New instances of `wbtmapT` are also returned by functions that manipulate the tr
 | Delete the minimum element from tree `root`. O(log N) |
 | **get**(self: wbtmapT, key: K, vdefault: V) -> V |
 | Retrieves the value for `key` in the tree `root` iff `key` is in the tree.  Otherwise, `vdefault` is returned. O(log N) |
-| **getmax**(self: wbtmapT, kdefault K, vdefault V) -> K, V |
+| **getmax**(self: wbtmapT, kdefault: K, vdefault: V) -> K, V |
 | Retrieves the key,value pair with the largest key in the tree `root`. For an empty tree `kdefault, vdefault` is returned. O(log N) |
 | **getmin**(self: wbtmapT, kdefault: K, vdefault: V) ->  K, V |
 | Retrieves the key,value pair with the smallest key in the tree `root`. For an empty tree `kdefault, vdefault` is returned. O(log N) |
 | **getNth**(self: wbtmapT, index: int, kdefault: K, vdefault: V) -> K, V |
 | Get the key,value pair of the 0-based `index` key in the tree `root` when index is positive and less than the tree length. Or get the tree length plus `index` key in the tree `root` when the `index` is negative and greater than the negative tree length. Otherwise, `kdefault, vdefault` is returned. O(log N) |
-|**getnext**(self: wbtmapT, key K, kdefault K, vdefault V) -> K, V |
+| **getnext**(self: wbtmapT, key K, kdefault: K, vdefault: V) -> K, V |
 | Returns the key,value pair with smallest key > `key`. It is almost inorder successor, but it also works when `key` is not present. If there is no such successor key in the tree, `kdefault, vdefault` is returned. O(log N) |
-|**getprev**(self: wbtmapT, key K, kdefault K, vdefault: V) -> K, V |
+| **getprev**(self: wbtmapT, key K, kdefault: K, vdefault: V) -> K, V |
 | Returns the key,value pair with largest key < `key`. It is almost inorder predecessor, but it also works when `key` is not present. If there is no such predecessor key in the tree, `kdefault, vdefault` is returned. O(log N) |
 | **len**(self: wbtmapT) -> int |
 | Returns the number of keys in tree at `root`.  O(1) |

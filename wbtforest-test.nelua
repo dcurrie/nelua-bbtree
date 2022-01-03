@@ -30,6 +30,39 @@ nester.describe('wbtforest', function()
       forest:destroy()
     end)
 
+    nester.it('API', function()
+      local forest: wbtforest(integer, integer) <close>
+      local wbt1 <close> = forest:makewbtmap() -- : wbtmapT
+      local wbt2 <close> = forest:makewbtmap() -- : wbtmapT
+      local wbt3 <close> = forest:makewbtmap() -- : wbtmapT
+      wbt2 = wbt1:insert(0, 42)
+      wbt2 = wbt1:delete(0)
+      wbt2 = wbt1:delmax()
+      wbt2 = wbt1:delmin()
+      local w = wbt1:get(0, 1)
+      local k,v = wbt1:getmax(-1, -2)
+      k,v = wbt1:getmin(-1, -2)
+      k,v = wbt1:getNth(9, -1, -2)
+      k,v = wbt1:getnext(8, -1, -2)
+      k,v = wbt1:getprev(7, -1, -2)
+      w = wbt1:getrank(0, -1)
+      --
+      local b = wbt1:contains(6)
+      wbt3 = wbt1:union(wbt2)
+      wbt3 = wbt1:intersection(wbt2)
+      wbt3 = wbt1:difference(wbt2)
+      wbt3 = wbt1:symmetricdifference(wbt2)
+      b = wbt1:issubset(wbt2)
+      b = wbt1:ispropersubset(wbt2)
+      b = wbt1:setequal(wbt2)
+      b = wbt1:disjoint(wbt2)
+      local function merge(k: integer, v1: integer, v2: integer)
+        if k > 0 then return v1 + v2 else return v1 - v2 end
+      end
+      wbt3 = wbt1:unionmerge(wbt2, merge)
+      wbt3 = wbt1:intersectionmerge(wbt2, merge)
+    end)
+
     nester.it('grow manual', function()
       local forest: wbtforest(integer, integer, nil, GeneralAllocator) <close>
       --PRINTF!("About to make\n")

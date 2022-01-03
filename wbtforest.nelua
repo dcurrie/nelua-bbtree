@@ -634,7 +634,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
       else
           uindex = (@uint32)(index) -- all set
       end
-      while self.nodes[node] ~= WBTNIL do
+      while node ~= WBTNIL do
         local lhssize = self:nodesize(self.nodes[node].lhs)
         if uindex < lhssize then
           node = self.nodes[node].lhs
@@ -654,11 +654,11 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     -- Retrieves the key,value pair with the smallest key in the tree `root`
     -- For an empty tree `default` is returned. O(log N)
     local node = root
-    if self.nodes[node] == WBTNIL then
+    if node > #self.nodes then -- or node == WBTNIL then
       return kdefault, vdefault
     else
       while self.nodes[node].lhs ~= WBTNIL do
-          node = self.nodes[node].lhs
+        node = self.nodes[node].lhs
       end
       return self.nodes[node].key, self.nodes[node].val
     end
@@ -668,21 +668,21 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     -- Retrieves the key,value pair with the largest key in the tree `root`
     -- For an empty tree `default` is returned. O(log N)
     local node = root
-    if self.nodes[node] == WBTNIL then
+    if node > #self.nodes then -- or node == WBTNIL then
       return kdefault, vdefault
     else
       while self.nodes[node].rhs ~= WBTNIL do
-          node = self.nodes[node].rhs
+        node = self.nodes[node].rhs
       end
       return self.nodes[node].key, self.nodes[node].val
     end
   end
 
   function wbtforestT:getKV(node: uint32, defaultk: K, defaultv: V): (K, V) <inline>
-    if self.nodes[node] == WBTNIL then
-        return defaultk, defaultv
+    if node > #self.nodes then -- or node == WBTNIL then
+      return defaultk, defaultv
     else
-        return self.nodes[node].key, self.nodes[node].val
+      return self.nodes[node].key, self.nodes[node].val
     end
   end
 
@@ -693,7 +693,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     local last_lhs_from: uint32 = WBTNIL
     local node = root
     while true do
-      if self.nodes[node] == WBTNIL then
+      if node > #self.nodes then -- or node == WBTNIL then
           return self:getKV(last_lhs_from, defaultk, defaultv) -- key not found
       else
         local dif = #[CompareFunc]#(key, self.nodes[node].key)
@@ -723,7 +723,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     local last_rhs_from: uint32 = WBTNIL
     local node = root
     while true do
-      if self.nodes[node] == WBTNIL then
+      if node > #self.nodes then -- or node == WBTNIL then
           return self:getKV(last_rhs_from, defaultk, defaultv) -- key not found
       else
         local dif = #[CompareFunc]#(key, self.nodes[node].key)
@@ -754,7 +754,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     local result = default
     local n: integer = 0
     local node = root
-    while self.nodes[node] ~= WBTNIL do
+    while node ~= WBTNIL do
       local dif = #[CompareFunc]#(key, self.nodes[node].key)
       switch dif
       case -1 then
