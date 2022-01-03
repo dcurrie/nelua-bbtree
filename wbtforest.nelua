@@ -29,7 +29,7 @@ Features:
 * Insert (``add``), lookup (``get``), and delete (``del``) in O(log(N)) time
 * Key-ordered iterators (``inorder`` and ``revorder``)
 * Lookup by relative position from beginning or end (``getNth``) in O(log(N)) time
-* Get the position (``rank``) by key in O(log(N)) time
+* Get the position (``getrank``) by key in O(log(N)) time
 * Efficient set operations using tree keys
 * ? Map extensions to set operations with optional value merge control for duplicates
 ]]
@@ -748,7 +748,7 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
 
   --[[ ************************ rank ************************ ]]
 
-  function wbtforestT:rank(root: uint32, key: K, default: integer): integer
+  function wbtforestT:getrank(root: uint32, key: K, default: integer): integer
     -- Retrieves the 0-based index of `key` in the tree `root` iff `key` is in the tree.
     -- Otherwise, `default` is returned. O(log N)
     local result = default
@@ -811,9 +811,6 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
 
   function wbtmapT:insert(k: K, v: V): *wbtmapT
     local forest = self:getforest()
-    if forest == nilptr then
-      panic("Attempt to insert into destroy'd wbtforest")
-    end
     local node: uint32 = forest:insert(self.root.node, k, v)
     forest.wip_n = 0 -- no more wip
     return forest:makewbtmap_(node)
@@ -822,6 +819,57 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtmapT:get(k: K, default: V): V
     local forest = self:getforest()
     return forest:get(self.root.node, k, default)
+  end
+
+  function wbtmapT:delete(k: K): *wbtmapT
+    local forest = self:getforest()
+    local node: uint32 = forest:delete(self.root.node, k)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:delmin(): *wbtmapT
+    local forest = self:getforest()
+    local node: uint32 = forest:delmin(self.root.node)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:delmax(): *wbtmapT
+    local forest = self:getforest()
+    local node: uint32 = forest:delmax(self.root.node)
+    forest.wip_n = 0 -- no more wip
+    return forest:makewbtmap_(node)
+  end
+
+  function wbtmapT:getNth(index: integer, kdefault: K, vdefault: V): (K, V)
+    local forest = self:getforest()
+    return forest:getNth(self.root.node, index, kdefault, vdefault)
+  end
+
+  function wbtmapT:getmin(kdefault: K, vdefault: V): (K, V)
+    local forest = self:getforest()
+    return forest:getmin(self.root.node, kdefault, vdefault)
+  end
+
+  function wbtmapT:getmax(kdefault: K, vdefault: V): (K, V)
+    local forest = self:getforest()
+    return forest:getmax(self.root.node, kdefault, vdefault)
+  end
+
+  function wbtmapT:getnext(k: K, kdefault: K, vdefault: V): (K, V)
+    local forest = self:getforest()
+    return forest:getnext(self.root.node, k, kdefault, vdefault)
+  end
+
+  function wbtmapT:getprev(k: K, kdefault: K, vdefault: V): (K, V)
+    local forest = self:getforest()
+    return forest:getprev(self.root.node, k, kdefault, vdefault)
+  end
+
+  function wbtmapT:getrank(k: K, default: integer): integer
+    local forest = self:getforest()
+    return forest:getrank(self.root.node, k, default)
   end
 
   function wbtmapT:__len(): isize

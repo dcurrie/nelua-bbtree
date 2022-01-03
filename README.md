@@ -30,7 +30,7 @@ with a nice combination of properties:
 * Insert (`insert`), lookup (`get`), and delete (`delete`) in O(log(N)) time
 * Key-ordered iterators (`pairs` and `revpairs`)
 * Lookup by relative position from beginning or end (`getnth`) in O(log(N)) time
-* Get the position (`rank`) by key in O(log(N)) time
+* Get the position (`getrank`) by key in O(log(N)) time
 * Efficient set operations using tree keys
 * Map extensions to set operations with optional value merge control for duplicates
 

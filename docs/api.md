@@ -6,7 +6,7 @@ a persistent data structure providing a generic (parameterized) key,value map
  * Insert (``insert``), lookup (``get``), and delete (``delete``) in O(log(N)) time
  * Key-ordered iterators (``pairs`` and ``revpairs``)
  * Lookup by relative position from beginning or end (``getNth``) in O(log(N) time
- * Get the position (``rank``) by key in O(log(N)) time
+ * Get the position (``getrank``) by key in O(log(N)) time
  * Efficient set operations using tree keys
  * Set operations with map extensions for options on value merge for duplicates
 
@@ -77,7 +77,7 @@ New instances of `wbtmapT` are also returned by functions that manipulate the tr
 | Returns the key,value pair with largest key < `key`. It is almost inorder predecessor, but it also works when `key` is not present. If there is no such predecessor key in the tree, `kdefault, vdefault` is returned. O(log N) |
 | **len**(self: wbtmapT) -> int |
 | Returns the number of keys in tree at `root`.  O(1) |
-| **rank**(self: wbtmapT, key: K, rdefault: int) -> int |
+| **getrank**(self: wbtmapT, key: K, rdefault: int) -> int |
 | Retrieves the 0-based index of `key` in the tree `root` iff `key` is in the tree. Otherwise, `rdefault` is returned. O(log N) |
 
 ### Iterators
