@@ -18,8 +18,8 @@ design is described in [wbtgc](docs/wbtgc.md).
 
 ## Status
 
-The project has basic BBTree functions working, but is incomplete: some set functions are not
-coded, and unit testing is incomplete. It is not ready for use.
+The project has basic BBTree functions working, but unit testing is incomplete. As such it is
+not really ready for use, but I welcome feedback.
 
 ## BBTree Overview
 

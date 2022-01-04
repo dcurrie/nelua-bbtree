@@ -13,7 +13,7 @@ why I am taking a look at it. However, it means there are features that exist
 and are not really documented. One I needed and found via Discord was
 `<forwarddecl>` to make circular references among record definitions.
 
-## `__at`
+## `__atindex`
 
 The `__atindex` metamethod is ugly. My first Nelua experience was a port of my
 Lobster Robin Hood Hashmap to Nelua. The Robin Hood Hashmap moves entries
@@ -50,6 +50,12 @@ After coming to terms with having to check for initialization state in several
 places in the code (e.g., see the **three** places I use `preprootslist`), I see
 that Eduardo is implementing a `__new` metamethod to do the record initialization.
 Hmm.
+
+## Doubly linked lists
+
+I prefer the circular version. There are fewer special cases to worry about (like
+head and tail NILs), and any node can be a fast way in, and any node can be left
+as the only remaining piece of the list. It is better suited to my use-case.
 
 ## Type System and Generics
 
