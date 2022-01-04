@@ -39,7 +39,7 @@ As such it is effectively immutable, as the operations do not (visibly) update t
 but instead always yield a new updated structure. When insertions or deletions to the tree are made, we
 attempt to reuse as much of the old structure as possible.
 
-Because Nelua has an included garbage collector, Nelua programs can run without Nelua's gc. To
+Nelua has a garbage collector, but Nelua programs can run with or without Nelua's gc. To
 accommodate them, `wbtforestT` manages its own heap of nodes and list of tree roots. Operations on
 trees always return a new root, called a `wbtmapT`. In garbage collected environments, the `__gc`
 metamethods on `wbtmapT` and `wbtforestT` will clean up internal `wbtforestT` resources. In non-gc

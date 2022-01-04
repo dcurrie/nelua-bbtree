@@ -54,8 +54,10 @@ Hmm.
 ## Doubly linked lists
 
 I prefer the circular version. There are fewer special cases to worry about (like
-head and tail NILs), and any node can be a fast way in, and any node can be left
-as the only remaining piece of the list. It is better suited to my use-case.
+head and tail NILs), any node can be a fast way into the list, and any node can
+be left as the only remaining piece of the list, as I did with the `wbtrootT`
+records. It is just better suited to my use-case, so I didn't use the `list`
+standard library.
 
 ## Type System and Generics
 

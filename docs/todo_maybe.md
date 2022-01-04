@@ -34,7 +34,8 @@ Many times we know that a `wbtmapT` passed to a function, like `insert`, will ne
 used again. We can avoid the allocation and later gc of the new `wbtrootT` by modifying
 the argument to the function instead of creating a new `wbtrootT`.
 
-Using a suffix to indicate "destructive" could be used; too bad Nelua doesn't support use of
+Using a function name suffix to indicate "destructive" could be used to differentiate
+the two versions of the function; too bad Nelua doesn't support use of
 symbols in function names like Scheme's use of a `!` suffix for destructive. Perhaps:
 
 ```lua
@@ -52,8 +53,8 @@ Essentially the above would be equivalent to:
 
 The same could be done for two-tree functions, such as `union`, but in that case one
 tree would be persisted and one destructively updated. Perhaps suffixes like `_Dp` and
-`_pD` could be used to indicate which is which. For `union`, only of the those two is
-needed since the arguments to `union` can be swapped, but for asymmetric operations
+`_pD` could be used to indicate which is which. For `union`, only one of the those two
+is needed since the arguments to `union` can be swapped, but for asymmetric operations
 like `difference` we'd need both.
 
 Would this mix of persistent and destructive `wbtmapT`s be too confusing?
