@@ -71,7 +71,7 @@ nester.describe('wbtforest', function()
     nester.it('grow manual', function()
       local forest: wbtforest(integer, integer, nil, GeneralAllocator) <close>
       --PRINTF!("About to make\n")
-      local wbt1 <close> = forest:makewbtmap() -- : *wbtmapT NG?
+      local wbt1 = forest:makewbtmap() -- : *wbtmapT NG?
       --PRINTF!("About to loop\n")
       for i = 1, 240 do
         local wbt2 = wbt1:insert(i,-i) -- : *wbtmapT
@@ -81,13 +81,15 @@ nester.describe('wbtforest', function()
         --PRINTF!("i %d wbt2 siz %d\n", i, #wbt2)
         wbt1, wbt2 = wbt2, wbt1
         expect.equal(#forest, 2)
-        wbt2:destroy()
+        --wbt2:destroy()
+        general_allocator:delete(wbt2) -- __delete metamethod calls wbt2:destroy()
         expect.equal(#forest, 1)
         --PRINTF!("i %d wbt1 siz %d\n", i, #wbt1)
         expect.equal(#wbt1, i)
       end
       expect.equal(wbt1:get(42,-999), -42)
       expect.equal(wbt1:get(222,-999), -222)
+      general_allocator:delete(wbt1) -- __delete metamethod calls wbt1:destroy()
       --PRINTF!("%s\n", wbt1:treetostring())
       --PRINTF!("gcwip size: %d\n", #forest.gcwip)
       --PRINTF!("240 inserts; sizes... nodes: %d marks %d gcwip: %d\n"

@@ -213,10 +213,15 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     self:destroy()
   end
 
-  -- Effectively the same as `destroy`, called when record id garbage collected.
+  -- Effectively the same as `destroy`, called when record is garbage collected.
   function wbtmapT:__gc(): void
     --PRINTF!("__gc %u\n", self.root.node)
     self:destroy()
+  end
+
+   -- Effectively the same as `destroy`, called when record is deleted.
+  function wbtmapT:__delete(): void
+     self:destroy()
   end
 
   --[[
@@ -227,6 +232,10 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   function wbtforestT:destroy(): void
     self.allocator:spandealloc(self.nodes)
     self.nodes = (@span(wbtnodeT))()
+    self.allocator:spandealloc(self.marks)
+    self.marks = (@span(uint64))()
+    self.allocator:spandealloc(self.gcwip)
+    self.gcwip = (@span(uint32))()
     self.rover = 0
     if self.trail ~= nilptr then
       self.trail.forest = nilptr -- delink this forest from its trail leaving trail in place
@@ -257,6 +266,11 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
   -- Effectively the same as `destroy`, called when record id garbage collected.
   function wbtforestT:__gc(): void
     self:destroy()
+  end
+
+  -- Effectively the same as `destroy`, called when record is deleted.
+  function wbtforestT:__delete(): void
+     self:destroy()
   end
 
   -- Returns the number of elements in the container, in this case the number of roots.
