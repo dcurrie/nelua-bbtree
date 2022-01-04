@@ -115,18 +115,3 @@ New instances of `wbtmapT` are also returned by functions that manipulate the tr
 | Returns true if both `tree1` and `tree2` have the same keys. O(N) where N is `len(tree1)` |
 | **disjoint**(tree1: wbtmapT, tree2: wbtmapT) -> boolean |
 | Returns true iff `tree1` and `tree2` have no keys in common. O(N) where N is `len(tree1)` |
-
-### Not implemented; TBD if they will be
-
-| HOF |
-|:---------------------|
-| **foldl**(self: wbtmapT, base: T, f: (K,V,T)->T)) -> T |
-| Applies the function `f` to each key value pair of tree `root` in order (left ro right). Uses the `base` value for the first leftmost operand. So, for example, to construct a sum of the tree values, you could use ``foldl(root, 0): _a; _b + _c`` and this will print the keys in order prefixed by "keys:" and separated by ":": `print(foldl(tree, "keys") k, v, b: v; concat_string([b, k],":"))` |
-| **foldr**(self: wbtmapT, base: T, f: (K,V,T)->T)) -> T |
-| Applies the function `f` to each key value pair of tree `root` in reverse order (right to left). Uses the `base` value for the first rightmost operand. |
-| **foreach**(self: wbtmapT, f: (K,V)->void) -> void |
-| Applies function `f` to each key and corresponding value of `root`, discarding the results. |
-| **map**(self: wbtmapT, f: (K,V,V)->V) -> wbtmapT |
-| Returns a new tree with the keys of tree `root` and values that are the result of applying `f` to each key and corresponding value in `root`. |
-| **toset**(keys: [K]) -> BBTree<K,bool> |
-| Creates a BBTree set that contains the given `keys` with value `true`. |

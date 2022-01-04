@@ -53,46 +53,6 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
--- 2021-12-21 e
-
---[[
-Design: wbtforest has span of tree nodes, a mark/free bitarray, a bump allocation index, and a
-list of wbttree root records. All node "pointers" are indexes into the span of tree nodes.
-
-The GC is non-moving; this allows wbt functions to hold node indexes into the node span across
-GC calls, which may occur during allocations when space is exhausted within the function. A
-separate compactor is provided that may be called at top level. The GC uses a bit span to hold
-mark bits. This provides some cache locality for searching for free nodes during the sweep.
-Option: eliminate the free list and use the mark bits alone?
-
-The data structures are not protected with locks, and assume single threaded behavior; this is
-consistent with other Nelua libraries.
-
-To make this work with or without GC, we need to make the list (set? hashmap?) of tree roots
-weak... but there are no weak tables yet!?
-
-Discord: Does Nelua have any support or plan to support weak pointers in its GC? Searching the
-documentation, source code, and Discord for "weak" brings no joy. ;-)  The library I'm
-working on needs a "weak set" data structure to support use in both GC mode and no-GC mode.
-Weakset could be implemented using a Lua table with a `{__mode = "k"}` metatable, but I'd be
-really happy with a nelua weakset or weakhashmap, or even a weak doubly-linked-list. The only
-operations I need are insert (`__atindex`), `remove`, and an iterator like `__pairs`.
-
-Workaround: Keep the list of roots in the forest data structure, but return a wbt-token that
-points to an entry in the list of roots. When the wbt-token is GC'd or `destroy`ed the `__gc`
-metamethod deletes the entry from the list.
-
-Nodes created during insert et al may have no gc root until the tree is stitched up, so we keep
-a list `gcwip` of allocs for gc that is cleared before top level return from wbtreeT functions.
-]]
-
---[[
-I considered marking based on (Deutsch-)Schorr-Waite DFS, but since the algorithms use
-recursion on trees, there is no big advantage to stackless marking relative to the stack
-used by the primary algorithms. The stack depth is the same as the tree height, proportional
-to the log base 2 of the tree size.
-]]
-
 require "edebug"
 require "bitvector"
 
