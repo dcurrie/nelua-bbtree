@@ -228,12 +228,16 @@ local MAX_LOAD_FACTOR: usize <comptime> = 85
     self.allocator:spandealloc(self.nodes)
     self.nodes = (@span(wbtnodeT))()
     self.rover = 0
-    self.trail.forest = nilptr -- delink this forest from its trail leaving trail in place
+    if self.trail ~= nilptr then
+      self.trail.forest = nilptr -- delink this forest from its trail leaving trail in place
+    end
     -- We cannot delete the roots. It would leave dangling pointers for some wbtmapT records.
     -- Check to see if the list of roots is uninitialized or has only one item, the sentinel
     if self.roots.next == 0 or self.roots.next == &self.roots then
       -- the list is empty and the wbttrail can be destroyed
-      self.allocator:dealloc(self.trail)
+      if self.trail ~= nilptr then
+        self.allocator:dealloc(self.trail)
+      end
       --PRINTF!('Destroying trail from wbtforest\n')
     else
       -- remove the forest from the list of roots

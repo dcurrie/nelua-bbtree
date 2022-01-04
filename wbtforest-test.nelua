@@ -10,10 +10,15 @@ nester.describe('wbtforest', function()
   end)
 
   nester.describe('wbtforest funs', function() -- Describe blocks can be nested.
-    nester.it('instanciating', function()
+    nester.it('instanciating default', function()
       local forest: wbtforest(integer, integer)
       expect.equal(#forest, 0) -- creates doubly linked list
       expect.equal(#forest, 0) -- uses doubly linked list
+    end)
+
+    nester.it('instanciating general', function()
+      local forest: wbtforest(integer, integer, nil, GeneralAllocator)
+      forest:destroy()
     end)
 
     nester.it('insert & get', function()
