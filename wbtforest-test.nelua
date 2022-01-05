@@ -7,7 +7,7 @@ require 'wbtforest'
 
 ## if pragmas.nogc then -- the GC is disabled, must manually deallocate memory
 ##  static_error("Use the unit test webforest-nogc-test.nelua in nogc mode")
-## else
+## end
 
 -- Customize nester configuration.
 nester.stop_on_fail = false
@@ -239,6 +239,96 @@ nester.describe('wbtforest', function()
       expect.truthy(ek == -99 and ev == 99)
       local bk, bv = wbt1:getNth(-77,-88,88) -- off the end, left
       expect.truthy(bk == -88 and bv == 88)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:countkeys(), #wbt1)
+      expect.equal(44, #wbt1)
+      expect.truthy(wbt0:isbalanced())
+      expect.truthy(wbt0:isordered(math.mininteger))
+      expect.equal(wbt0:countkeys(), #wbt0)
+      expect.equal(0, #wbt0)
+    end)
+
+    nester.it('next, prev, & rank', function()
+      local forest: wbtforest(integer, integer)
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      for k = 1, 44 do
+         wbt1 = wbt1:insert(k,-k)
+      end
+      local k1,v1 = wbt1:getnext(3,-99,99)
+      expect.truthy(k1 == 4 and v1 == -4)
+      local k2,v2 = wbt1:getprev(22,-99,99)
+      expect.truthy(k2 == 21 and v2 == -21)
+      local k3,v3 = wbt1:getprev(1,-99,99)
+      expect.truthy(k3 == -99 and v3 == 99)
+      local k4,v4 = wbt1:getnext(math.mininteger,-99,99)
+      expect.truthy(k4 == 1 and v4 == -1)
+      local k5,v5 = wbt1:getprev(100,-99,99)
+      expect.truthy(k5 == 44 and v5 == -44)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:countkeys(), #wbt1)
+      expect.equal(44, #wbt1)
+      expect.truthy(wbt1:getrank(1,-99) == 0)
+      for i = 2, 44 do
+        expect.truthy(wbt1:getrank(i,-99) == i-1)
+      end
+      -- for code coverage...
+      for i = 2, 45 do
+        local k,v = wbt1:getprev(i,-99,99)
+        expect.truthy(k == i-1 and v == -(i-1))
+      end
+      for i = 0, 43 do
+        local k,v = wbt1:getnext(i,-99,99)
+        expect.truthy(k == i+1 and v == -(i+1))
+      end
+    end)
+
+    nester.it('delete', function()
+      local forest: wbtforest(integer, integer)
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      for k = 1, 44 do
+         wbt1 = wbt1:insert(k,-k)
+      end
+      wbt1 = wbt1:delete(13)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(43, #wbt1)
+      local res = wbt1:get(13, -999)
+      expect.equal(res, -999)
+      res = wbt1:get(26, -999)
+      expect.equal(res, -26)
+      wbt1 = wbt1:delete(26)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(42, #wbt1)
+      res = wbt1:get(26, -999)
+      expect.equal(res, -999)
+      res = wbt1:get(1, -999)
+      expect.equal(res, -1)
+      wbt1 = wbt1:delmin()
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(41, #wbt1)
+      res = wbt1:get(1, -999)
+      expect.equal(res, -999)
+      res = wbt1:get(44, -999)
+      expect.equal(res, -44)
+      wbt1 = wbt1:delmax()
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(40, #wbt1)
+      res = wbt1:get(44, -999)
+      expect.equal(res, -999)
+      --
+      local wbt0 = forest:makewbtmap()
+      wbt0 = wbt0:delmin()
+      wbt0 = wbt0:delmin()
+      wbt0 = wbt0:delete(13)
+      expect.truthy(wbt0:isbalanced())
+      expect.truthy(wbt0:isordered(math.mininteger))
+      expect.equal( 0, #wbt0)
+      expect.equal(40, #wbt1)
     end)
 
   end)
@@ -246,21 +336,3 @@ end)
 
 nester.report() -- Print overall statistic of the tests run.
 nester.exit() -- Exit with success if all tests passed.
-
-## end
-
-  --[[
-  assert(map:find_(0)==nilptr)
-  local p: *integer = map:insert_(42)
-  assert(p ~= nilptr)
-  $p = -42
-  p = map:find_(42)
-  assert(p ~= nilptr)
-  assert($p == -42)
-  ##if WBTMAP_UNITTEST then
-    assert(map:isbalanced())
-    io.printf("Balanced!\n")
-  ##end
-  map:destroy()
-  ]]
-
