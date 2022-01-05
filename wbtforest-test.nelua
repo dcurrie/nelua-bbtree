@@ -1,5 +1,13 @@
-require 'wbtforest'
 require 'nester'
+require 'math'
+
+-- Constant used to enable unit test functions
+## WBTFOREST_UNITTEST = true
+require 'wbtforest'
+
+## if pragmas.nogc then -- the GC is disabled, must manually deallocate memory
+##  static_error("Use the unit test webforest-nogc-test.nelua in nogc mode")
+## else
 
 -- Customize nester configuration.
 nester.stop_on_fail = false
@@ -178,12 +186,68 @@ nester.describe('wbtforest', function()
       wbt1:destroy()
     end)
 
+    nester.it('maintain balance, rank', function()
+      local forest: wbtforest(integer, integer)
+      local wbt0 = forest:makewbtmap() -- : wbtmapT
+      -- empty tree is ordered, balanced, has length zero
+      expect.truthy(wbt0:isbalanced())
+      expect.truthy(wbt0:isordered(math.mininteger))
+      expect.equal(wbt0:countkeys(), #wbt0)
+      expect.equal(0, #wbt0)
+      -- one entry tree is ordered, balanced, has length one
+      local wbt1 = wbt0:insert(1,-1)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:countkeys(), #wbt1)
+      expect.equal(1, #wbt1)
+      -- add 20 items in increasing key order, check ordered, balanced, has length 21
+      for k = 2, 21 do
+         wbt1 = wbt1:insert(k,-k)
+      end
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:countkeys(), #wbt1)
+      expect.equal(21, #wbt1)
+      -- add 23 items in decreasing key order, check ordered, balanced, has length 44
+      for k = 44, 22, -1 do
+         wbt1 = wbt1:insert(k,-k)
+      end
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:countkeys(), #wbt1)
+      expect.equal(44, #wbt1)
+      -- check that some items are in the length 44 tree
+      local ik, iv = wbt1:getmin(-99,99)
+      expect.truthy(ik == 1 and iv == -1)
+      local xk, xv = wbt1:getmax(-99,99)
+      expect.truthy(xk == 44 and xv == -44)
+      local av = wbt1:get(25, 500)
+      expect.equal(av, -25)
+      local nk, nv = wbt1:getNth(6,-99,99) -- nth is 0-based
+      expect.truthy(nk == 7 and nv == -7)
+      local pk, pv = wbt1:getNth(-7,-99,99) -- nth -1 is last
+      expect.truthy(pk == 38 and pv == -38)
+      local k0, v0 = wbt0:getmin(-99,99) -- note: empty tree
+      expect.truthy(k0 == -99 and v0 == 99)
+      local k1, v1 = wbt0:getmax(-99,99) -- note: empty tree
+      expect.truthy(k1 == -99 and v1 == 99)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:countkeys(), #wbt1)
+      expect.equal(44, #wbt1)
+      local ek, ev = wbt1:getNth(98,-99,99) -- off the end, right
+      expect.truthy(ek == -99 and ev == 99)
+      local bk, bv = wbt1:getNth(-77,-88,88) -- off the end, left
+      expect.truthy(bk == -88 and bv == 88)
+    end)
+
   end)
 end)
 
 nester.report() -- Print overall statistic of the tests run.
 nester.exit() -- Exit with success if all tests passed.
 
+## end
 
   --[[
   assert(map:find_(0)==nilptr)

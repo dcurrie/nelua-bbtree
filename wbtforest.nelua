@@ -56,9 +56,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 require "edebug"
 require "bitvector"
 
--- Constant used to enable unit test functions
-## WBTFOREST_UNITTEST = true
-
 local OMEGA: uint32 <comptime> = 3
 local ALPHA: uint32 <comptime> = 2
 
@@ -1320,67 +1317,99 @@ function wbtmapT:__len(): isize
 
   --[[ ************************ testing ************************ ]]
 
-## if WBTFOREST_UNITTEST then
-  function wbtforestT:treetostring(n: uint32): string
-    -- assume int keys
-    if n == WBTNIL then
-      return ""
+  ## if WBTFOREST_UNITTEST then
+    function wbtforestT:treetostring(n: uint32): string
+      -- assume int keys
+      if n == WBTNIL then
+        return ""
+      end
+      local root = self.nodes[n]
+      return string.format("(%s %d %s)",
+              self:treetostring(root.lhs), root.key, self:treetostring(root.rhs))
     end
-    local root = self.nodes[n]
-    return string.format("(%s %d %s)",
-             self:treetostring(root.lhs), root.key, self:treetostring(root.rhs))
-  end
-  function wbtmapT:treetostring(): string
-    local forest = self:getforest()
-    return forest:treetostring(self.root.node)
-  end
-## end
+    function wbtmapT:treetostring(): string
+      local forest = self:getforest()
+      return forest:treetostring(self.root.node)
+    end
 
+    function wbtforestT:balanced_(node: uint32): isize
+      if node == WBTNIL then return 0 end
+      local sl: uint32 = self:nodesize(self.nodes[node].lhs)
+      local sr: uint32 = self:nodesize(self.nodes[node].rhs)
+      local sz: uint32 = self:nodesize(node)
+      if (sl + 1 + sr) ~= sz then
+        PRINTF!("Error in wbtmap balanced: %u != %u + 1 + %u; (%u %u)\n",
+                 sz, sl, sr, self.nodes[node].lhs, self.nodes[node].rhs)
+        return -1
+      end
+      if (sl + sr) <= 1 then
+        -- balanced
+      elseif sr > (OMEGA * sl) then
+        PRINTF!("Error in wbtmap balanced: sr %u > omega * %u\n", sr, sl)
+        return -1
+      elseif sl > (OMEGA * sr) then
+        PRINTF!("Error in wbtmap balanced: sl %u > omega * %u\n", sl, sr)
+        return -1
+      end
+      local slb: isize = self:balanced_(self.nodes[node].lhs)
+      local srb: isize = self:balanced_(self.nodes[node].rhs)
+      if (slb < 0) or (sl ~= slb) then
+        if (slb >= 0) then io.printf("Error in wbtmap balanced: sl %u != %lld\n", sl, slb) end
+        return -1
+      end
+      if (srb < 0) or (sr ~= srb) then
+        if (srb >= 0) then PRINTF!("Error in wbtmap balanced:  sr %u != %lld\n", sr, srb) end
+        return -1
+      end
+      return sz
+    end
 
-  -- TODO
+    function wbtforestT:isbalanced(root: uint32): boolean
+      -- Used for unit testing only; returns `true` if the tree is balanced, which should always
+      -- be the case.
+      local size = self:balanced_(root)
+      if root == WBTNIL then
+        return (size == 0)
+      end
+      return (size > 0) and (size == self:nodesize(root))
+    end
+    -- Unit test function returns `true` if the tree is balanced which should always be true
+    function wbtmapT:isbalanced(): boolean
+      local forest = self:getforest()
+      return forest:isbalanced(self.root.node)
+    end
 
---  function wbtmapT:balanced_(node: uint32): isize
---    if node == WBTNIL then return 0 end
---    local sl: uint32 = self:nodesize_(self.nodes[node].l)
---    local sr: uint32 = self:nodesize_(self.nodes[node].r)
---    local sz: uint32 = self:nodesize_(node)
---    if (sl + 1 + sr) ~= sz then
---      io.printf("Error in wbtmap balanced: %u != %u + 1 + %u; (%u %u)\n", sz, sl, sr, self.nodes[node].l, self.nodes[node].r)
---      return -1
---    end
---    if (sl + sr) <= 1 then
---      -- balanced
---    elseif sr > (OMEGA * sl) then
---      io.printf("Error in wbtmap balanced: sr %u > omega * %u\n", sr, sl)
---      return -1
---    elseif sl > (OMEGA * sr) then
---      io.printf("Error in wbtmap balanced: sl %u > omega * %u\n", sl, sr)
---      return -1
---    end
---    local slb: isize = self:balanced_(self.nodes[node].l)
---    local srb: isize = self:balanced_(self.nodes[node].r)
---    if (slb < 0) or (sl ~= slb) then
---      if (slb >= 0) then io.printf("Error in wbtmap balanced: sl %u != %lld\n", sl, slb) end
---      return -1
---    end
---    if (srb < 0) or (sr ~= srb) then
---      if (srb >= 0) then io.printf("Error in wbtmap balanced:  sr %u != %lld\n", sr, srb) end
---      return -1
---    end
---    return sz
---  end
---
---  -- Unit test function returns `true` if the tree is balanced which should always be true
---  function wbtmapT:isbalanced(): boolean
---    local sz: isize = self:balanced_(self.root)
---    if self.root < self.bump then
---      return (sz > 0) and (sz == self:nodesize_(self.root))
---    else
---      return (sz == 0)
---    end
---  end
---
---  ##end
+    function wbtforestT:countkeys(root: uint32): isize
+      -- Used for unit testing only; normally use `len` to get the number of keys.
+      local node: uint32 = root
+      local result: isize = 0
+      while node < #self.nodes do
+          result = result + self:countkeys(self.nodes[node].lhs)
+          result = result + 1
+          node = self.nodes[node].rhs
+      end
+      return result
+    end
+    -- Unit test function returns count of keys in the tree (not just the local nodesize)
+    function wbtmapT:countkeys(): isize
+      local forest = self:getforest()
+      return forest:countkeys(self.root.node)
+    end
+
+    function wbtmapT:isordered(min: K): boolean
+      local last = min
+      for k,v in pairs(self) do
+        if last == min or #[CompareFunc]#(last, k) == -1 then
+          -- ok
+          last = k
+        else
+          return false
+        end
+      end
+      return true
+    end
+
+  ##end -- WBTFOREST_UNITTEST
 
   ## return wbtforestT
 ## end
