@@ -1,0 +1,3 @@
+#!/bin/bash
+
+nelua --cc=/usr/local/opt/llvm/bin/clang --ldflags="-L/usr/local/opt/llvm/lib" --cflags="-I/usr/local/opt/llvm/include" $@
