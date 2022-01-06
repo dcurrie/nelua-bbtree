@@ -1,0 +1,296 @@
+--[[
+    wbtforestT stress test
+    follows same patern as BBTree stress tests for other implementations
+    2022-01-06 e
+]]
+
+## WBTFOREST_UNITTEST = true -- Constant used to enable unit test functions
+require 'wbtforest'
+
+## if pragmas.nogc then -- the GC is disabled, must manually deallocate memory
+##  static_error("the unit test webforest-stress.nelua cannot be run in nogc mode")
+## end
+
+require 'nester'
+
+require 'io'
+require 'os'
+require 'arg'
+require 'math'
+require 'stringbuilder'
+
+## if STRESS_TEST_N then
+local STRESS_TEST_N: integer <comptime> = #[STRESS_TEST_N]# -- config var
+## else
+local STRESS_TEST_N: integer <comptime> = 2000 -- config var
+## end
+## if BB_ITERATIONS then
+local BB_ITERATIONS: integer <comptime> = #[BB_ITERATIONS]# -- config var
+## else
+local BB_ITERATIONS: integer <comptime> = 2000 -- config var
+## end
+
+local MARKER: integer <comptime> = math.mininteger
+
+--[[ Simple random number generator with multiple states for separate streams
+Based on code written in 2014 by Sebastiano Vigna (vigna@acm.org)
+and placed by him into the public domain.
+]]
+
+local function murmurhash3_avalanche(x: uint64)
+    x = x ~ (x >> 33)
+    x = x * 0xff51afd7ed558ccd_uint64
+    x = x ~ (x >> 33)
+    x = x * 0xc4ceb9fe1a85ec53_uint64
+    return x ~ (x >> 33)
+end
+
+--[[ Vigna says: xorshift128+ is the fastest generator passing BigCrush without
+systematic errors, but due to the relatively short period it is acceptable only
+for applications with a very mild amount of parallelism; otherwise, use a
+xorshift1024* generator. It is good enough for this application. ]]
+
+local xorshift128plus_stateT = @record{
+  s0: uint64,
+  s1: uint64
+}
+
+function xorshift128plus_stateT:next(): uint64 <inline>
+  local s1 = self.s0
+  local s0 = self.s1 -- swap
+  self.s0 = s0
+  s1 = s1 ~ (s1 << 23)
+  s1 = s1 ~ s0 ~ (s1 >> 17) ~ (s0 >> 26)
+  self.s1 = s1
+  return s1 + s0
+end
+
+--[[ Vigna says: The state must be seeded so that it is not everywhere zero. If
+you have a 64-bit seed, we suggest to pass it twice through MurmurHash3's
+avalanching function. ]]
+
+local function xorshift128plus_seed (x: uint64): xorshift128plus_stateT
+  if x == 0 then x = 42 end -- cannot be 0
+  local s0 = murmurhash3_avalanche(murmurhash3_avalanche(x))
+  return (@xorshift128plus_stateT) {s0 = s0, s1 = murmurhash3_avalanche(s0)}
+end
+
+## if XTST then
+local x = tonumber(arg[1])
+local s: xorshift128plus_stateT = xorshift128plus_seed(x)
+io.printf("0x%x 0x%x\n", s:next(), s:next())
+io.printf("0x%x 0x%x\n", s:next(), s:next())
+--[[ 33 ->
+0x3dab32a9d013b927 0xc8abbb1f078c8dbe
+0xa7588ef1bad77942 0x722ff5971aa706de
+vs
+0x3dab32a9d013b927 0xc8abbb1f078c8dbe
+0xa7588ef1bad77942 0x722ff5971aa706de
+]]
+## end
+
+-- stolen from Nelua's lib/detail/xoshiro256 randomuint
+-- Generates a random unsigned integer in interval [0, n].
+function xorshift128plus_stateT:rand(n: uint64): uint64 <inline>
+  local x: uint64 = self:next()
+  if n & (n + 1) == 0 then -- is 'n + 1' a power of 2?
+    x = x & n -- no bias
+  else -- project the random integer in interval is a power of 2 to maintain uniform property
+    -- compute the smallest (2^b - 1) not smaller than 'n'
+    local lim: uint64 = n
+    lim = lim | (lim >> 1)
+    lim = lim | (lim >> 2)
+    lim = lim | (lim >> 4)
+    lim = lim | (lim >> 8)
+    lim = lim | (lim >> 16)
+    lim = lim | (lim >> 32)
+    -- project 'x' into [0..lim]
+    x = x & lim
+    -- check((lim & (lim + 1)) == 0 and lim >= n and (lim >> 1) < n)
+    while x > n do -- not inside [0..n]? try again
+      x = self:next() & lim
+    end
+  end
+  return x
+end
+
+## if NTST then
+local x = tonumber(arg[1])
+local n = tonumber(arg[2])
+local s: xorshift128plus_stateT = xorshift128plus_seed(x)
+for i = 1, 20 do io.printf("%u ", s:rand(n)) end
+io.printf("\n")
+--[[ 33 19 ->
+7 2 17 8 4 7 12 2 15 1 19 14 7 13 10 14 12 0 13 11
+]]
+## end
+
+local chs = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ~!@#$%^&*()+"
+
+local function make_random_key_val(k: int64): (string, int64)
+  check(k >= 0, "make_random_key_val needs a positive int64")
+  local sb: stringbuilder
+  local rg: xorshift128plus_stateT = xorshift128plus_seed((@uint64)(k))
+  local size = rg:rand(16) + 8
+  local s = sb:prepare(size)
+  for i = 1, size do
+    s[i-1] = chs[rg:rand(63)+1] -- string indexes are 1-based
+  end
+  sb:commit(size)
+  return tostring(sb), -k
+end
+
+## if STST then
+local k = tonumber(arg[1])
+local n = tonumber(arg[2])
+for i = 0, n-1 do
+  local s, v = make_random_key_val(k+i)
+  io.printf("%d, %s\n", v, s)
+end
+--[[ 33 10 ->
+-33, )cEXieN$mcVHuZo
+-34, hjMKIjDVBb(e~tp
+-35, SLXGXr^vsa@e(&(HE
+-36, ##XGZnBeSHDX
+-37, G^%wrCpW&nKp
+-38, IbCN#PgBVfUj$p+
+-39, a#BA@q*bdOiFbk
+-40, *mzr!P%Tfq^D
+-41, hodRE(fhh*ImeZoyMWqewuG
+-42, #!oe)Yyew
+]]
+## end
+
+local forest: wbtforest(string, integer) <close>
+local tree <close> = forest:makewbtmap() -- : wbtmapT
+local qintree: integer = 0
+local q_ins: integer = 0
+local q_del: integer = 0
+local rand1: xorshift128plus_stateT
+
+local intree: [STRESS_TEST_N]int64
+
+local function init_random_tree(): void
+  rand1 = xorshift128plus_seed(0x987654321)
+  for i = 0, STRESS_TEST_N-1 do
+    intree[i] = MARKER
+  end
+  qintree = 0;
+  q_ins = 0
+  q_del = 0
+end
+
+local function tstput(k: int64): void
+  local key, val = make_random_key_val(k)
+  tree = tree:insert(key, val)
+end
+
+local function tstget(k: int64): int64
+  local key, val = make_random_key_val(k)
+  return tree:get(key, 1)
+end
+
+local function tstrem(k: int64): void
+  local key, val = make_random_key_val(k)
+  tree = tree:delete(key)
+end
+
+local function do_random_tree_op(): void
+  local x = rand1:rand(STRESS_TEST_N-1)
+  local n = intree[x]
+  if n == MARKER then
+    -- insert
+    local k = rand1:rand(math.maxinteger)
+    tstput(k)
+    intree[x] = k
+    qintree = qintree + 1
+    q_ins = q_ins + 1
+  else
+    -- delete
+    tstrem(n)
+    intree[x] = MARKER
+    qintree = qintree - 1
+    q_del = q_del + 1
+  end
+end
+
+local function find_and_wipe_duplicate(): integer
+  for i = 0, STRESS_TEST_N-1 do
+    local n = intree[i]
+    if n ~= MARKER then
+      for j = i+1, STRESS_TEST_N-1 do
+        if n == intree[j] then
+          -- duplicate
+          intree[j] = MARKER
+          qintree = qintree - 1
+          q_ins = q_ins - 1
+          return j -- j is > 0
+        end
+      end
+    end
+  end
+  return 0
+end
+
+## if STST then
+io.printf("%f\n", os.now())
+os.sleep(2)
+io.printf("%f\n", os.now())
+## end
+
+nester.stop_on_fail = false
+
+nester.describe('wbtforest', function()
+  nester.before(function(name: string)
+    -- This function is run before every test.
+  end)
+
+  nester.it('stress test', function()
+
+    local stop: boolean = false
+    local start: float64 = os.now()
+    io.write("        ")
+    init_random_tree()
+    for i = 1, BB_ITERATIONS do
+      if stop then break end
+      do_random_tree_op()
+      for j = 0, STRESS_TEST_N-1 do
+        local n:int64 = intree[j]
+        if n ~= MARKER then
+          local v = tstget(n)
+          expect.truthy(v <= 0)
+          expect.truthy(v == -n)
+          if v == 1 then
+            stop = true
+            break
+          end
+        end
+      end
+      local sz = #tree
+      if sz ~= q_ins - q_del then
+        local dup = find_and_wipe_duplicate()
+        if dup ~= 0 then
+          -- whew!
+          io.printf("dup!\n")
+        end
+      end
+      expect.truthy(sz == (q_ins - q_del))
+      if stop or (sz ~= (q_ins - q_del)) then
+        -- fprintf(stderr, "random err: %u nodes, %ld final size\n", sz, q_ins - q_del);
+        expect.truthy(not stop)
+        stop = true
+      end
+      if i %%% 1024 == 0 then
+        io.write(".")
+        expect.truthy(tree:isordered(''))
+        expect.truthy(tree:isbalanced())
+      end
+    end
+    local finish = os.now()
+    io.printf("\n        CPU time %f s for %d loops, averaging %f s per loop\n",
+              finish - start, BB_ITERATIONS, (finish - start) / (@float64)(BB_ITERATIONS))
+    io.printf("        random q: %d  inserts, %d deletes, %d qintree, %d final size\n",
+              q_ins, q_del, qintree, q_ins - q_del)
+
+end)
+end)
