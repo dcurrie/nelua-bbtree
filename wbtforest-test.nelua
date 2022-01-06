@@ -19,7 +19,7 @@ nester.describe('wbtforest', function()
 
   nester.describe('wbtforest funs', function() -- Describe blocks can be nested.
     nester.it('instanciating default', function()
-      local forest: wbtforest(integer, integer)
+      local forest: wbtforest(integer, integer) <close>
       expect.equal(#forest, 0) -- creates doubly linked list
       expect.equal(#forest, 0) -- uses doubly linked list
     end)
@@ -145,7 +145,7 @@ nester.describe('wbtforest', function()
     -- Here and in revpairs I "cheat" and stack allocate `forest`, but make
     -- sure to `destroy` all `wbtmapT`s
     nester.it('pairs', function()
-      local forest: wbtforest(integer, integer)
+      local forest: wbtforest(integer, integer) <close>
       local wbt1 = forest:makewbtmap() -- : wbtmapT
       for k,v in pairs(wbt1) do
         expect.equal(k, v) -- to fail since there should be no pairs yet
@@ -166,7 +166,7 @@ nester.describe('wbtforest', function()
     end)
 
     nester.it('revpairs', function()
-      local forest: wbtforest(integer, integer)
+      local forest: wbtforest(integer, integer) <close>
       local wbt1 = forest:makewbtmap() -- : wbtmapT
       for k,v in wbt1:revpairs() do
         expect.equal(k, v) -- to fail since there should be no pairs yet
@@ -187,7 +187,7 @@ nester.describe('wbtforest', function()
     end)
 
     nester.it('maintain balance, rank', function()
-      local forest: wbtforest(integer, integer)
+      local forest: wbtforest(integer, integer) <close>
       local wbt0 = forest:makewbtmap() -- : wbtmapT
       -- empty tree is ordered, balanced, has length zero
       expect.truthy(wbt0:isbalanced())
@@ -250,7 +250,7 @@ nester.describe('wbtforest', function()
     end)
 
     nester.it('next, prev, & rank', function()
-      local forest: wbtforest(integer, integer)
+      local forest: wbtforest(integer, integer) <close>
       local wbt1 = forest:makewbtmap() -- : wbtmapT
       for k = 1, 44 do
          wbt1 = wbt1:insert(k,-k)
@@ -284,8 +284,8 @@ nester.describe('wbtforest', function()
       end
     end)
 
-    nester.it('delete', function()
-      local forest: wbtforest(integer, integer)
+    nester.it('delete variations', function()
+      local forest: wbtforest(integer, integer) <close>
       local wbt1 = forest:makewbtmap() -- : wbtmapT
       for k = 1, 44 do
          wbt1 = wbt1:insert(k,-k)
@@ -329,6 +329,48 @@ nester.describe('wbtforest', function()
       expect.truthy(wbt0:isordered(math.mininteger))
       expect.equal( 0, #wbt0)
       expect.equal(40, #wbt1)
+    end)
+
+    nester.it('delete random', function()
+      local forest: wbtforest(integer, integer) <close>
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      local n: integer = 1000
+      for k = 1, n do
+         wbt1 = wbt1:insert(k,-k)
+      end
+      math.randomseed(42,356)
+      while n > 0 do
+        local i = math.random(n)
+        local k0,v0 = wbt1:getNth(i-1, -99, 99)
+        expect.truthy(k0 ~= -99)
+        wbt1 = wbt1:delete(k0)
+        local v1 = wbt1:get(k0,99)
+        expect.equal(v1, 99)
+        n = n - 1
+        expect.truthy(wbt1:isbalanced())
+        expect.truthy(wbt1:isordered(math.mininteger))
+        if n ~= #wbt1 then
+          PRINTF!("%d: %s\n", n, wbt1:treetostring())
+        end
+        expect.equal(n, #wbt1)
+      end
+    end)
+
+    nester.it('insert to replace values', function()
+      local forest: wbtforest(integer, integer) <close>
+      local wbt1 = forest:makewbtmap() -- : wbtmapT
+      for k = 1, 9 do
+         wbt1 = wbt1:insert(k,-k)
+      end
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(9, #wbt1)
+      expect.equal(wbt1:get(3,99), -3)
+      wbt1 = wbt1:insert(3, -33)
+      expect.equal(9, #wbt1)
+      expect.truthy(wbt1:isbalanced())
+      expect.truthy(wbt1:isordered(math.mininteger))
+      expect.equal(wbt1:get(3,99), -33)
     end)
 
   end)
