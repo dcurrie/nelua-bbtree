@@ -4,23 +4,25 @@
 
 macOS default clang 13.0 compiler doesn't support --sanitize leaks
 
-`brew install llvm`
+`brew install llvm` gives this message
 
->    To use the bundled libc++ please add the following LDFLAGS:
->    LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
->
->    llvm is keg-only, which means it was not symlinked into /usr/local,
->    because macOS already provides this software and installing another version in
->    parallel can cause all kinds of trouble.
->
->    If you need to have llvm first in your PATH, run:
->    echo 'export PATH="/usr/local/opt/llvm/bin:$PATH"' >> ~/.zshrc
->
->    For compilers to find llvm you may need to set:
->    export LDFLAGS="-L/usr/local/opt/llvm/lib"
->    export CPPFLAGS="-I/usr/local/opt/llvm/include"
+```
+To use the bundled libc++ please add the following LDFLAGS:
+LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
 
-Then you can build Nelua code with, e.g.,:
+llvm is keg-only, which means it was not symlinked into /usr/local,
+because macOS already provides this software and installing another
+ version in parallel can cause all kinds of trouble.
+
+If you need to have llvm first in your PATH, run:
+echo 'export PATH="/usr/local/opt/llvm/bin:$PATH"' >> ~/.zshrc
+
+For compilers to find llvm you may need to set:
+export LDFLAGS="-L/usr/local/opt/llvm/lib"
+export CPPFLAGS="-I/usr/local/opt/llvm/include"
+```
+
+So, we can build Nelua code with, e.g.,:
 `nelua --cc=/usr/local/opt/llvm/bin/clang --ldflags="-L/usr/local/opt/llvm/lib" --cflags="-I/usr/local/opt/llvm/include" --sanitize -DeDEBUG wbtforest-test.nelua`
 
 Running that way didn't detect leaks, but when I used:

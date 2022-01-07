@@ -49,6 +49,58 @@ Instances of `wbtmapT` are intended to be immutable opaque data structures.
 
 New instances of `wbtmapT` are also returned by functions that manipulate the trees.
 
+## Memory Management
+
+The `wbtforest` library is designed to work with either automatic or manual
+memory management, i.e., in default or in `-Pnogc` modes.
+
+### Default (automatic) memory management mode
+
+No worries! Well, no worries as long as you use `new` to make `wbtforestT`
+instances. Using `new` will allocate the `wbtforestT` instance in the heap
+where it is automatically managed. In particular, there is a `__gc`
+metamethod on `wbtforestT` and on `wbtmapT` to `destroy` all resources used,
+and manage the links among them.
+
+#### Danger, Will Robinson!
+
+You *can* stack allocate a `wbtforestT` instance. In this case it is essential
+to call `wbtforestT.destroy` on that instance before the stack frame is exited.
+The most reliable way to manage this is to annotate the allocation with `<close>`
+as in:
+
+```lua
+require 'wbtforest'
+
+local function tbd()
+    local forest : wbtforest(keytype, valtype) <close>
+    -- your code here!
+end
+```
+This works because the `wbtforestT.__close` metamethod also calls
+`wbtforestT.destroy`
+
+If the code does not directly or indirectly call `wbtforestT.destroy` before
+the stack frame is exited, and there are live `wbtmapT` instances, you will
+likely get stack corruption when those instances are garbage collected.
+
+### Optional (`-Pnogc`) manual memory management mode
+
+In manual memory management mode you are responsible to `Allocator:delete` all
+instances of `wbtforestT` and `wbtmapT`. This can be done in any order. The
+`Allocator` must match the one passed to the `wbtforest` function used to create
+the `wbtforestT`, if any, or the `default_allocator` otherwise. Note that the
+Nelua `delete` function is shorthand for `default_allocator:delete`.
+
+The `wbtforestT` and `wbtmapT` instances have a `__delete` metamethod that does
+the required `wbtforestT.destroy` step when deleted.
+
+See the caveat above about stack allocating a `wbtforestT` instance. In the
+manual memory management mode you must also call `wbtforestT.destroy` on
+`wbtforestT` instances created on the stack (only call `delete` on
+`wbtforestT` instances created with `new`, and on `wbtmapT` instances, which
+are always created with `new`).
+
 ## Functions
 
 ### Basic Functions for *key,value* mapping and inquiry
