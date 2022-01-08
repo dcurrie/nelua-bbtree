@@ -1409,6 +1409,14 @@ function wbtmapT:__len(): isize
       return true
     end
 
+    function wbtforestT:arraytoset(a: *[0]K, q: integer, v: V): *wbtmapT
+      local m = self:makewbtmap()
+      for i = 0, q-1 do
+        m = m:insert(a[i], v)
+      end
+      return m
+    end
+
   ##end -- WBTFOREST_UNITTEST
 
   ## return wbtforestT

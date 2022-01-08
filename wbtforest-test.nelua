@@ -373,6 +373,33 @@ nester.describe('wbtforest', function()
       expect.equal(wbt1:get(3,99), -33)
     end)
 
+    nester.it('set construction', function()
+      local forest: wbtforest(integer, boolean) <close>
+      local s1a: []integer = {1, 2, 3, 4, 5}
+      local s1 = forest:arraytoset(&s1a, #s1a, true)
+      expect.equal(5, #s1)
+      expect.truthy(s1:contains(2))
+      expect.truthy(s1:contains(4))
+      expect.falsy(s1:contains(6))
+    end)
+
+    nester.it('string set operations', function()
+      local forest: wbtforest(string, boolean) <close>
+      local s1a: []string = {"a", "b"}
+      local s1 = forest:arraytoset(&s1a, #s1a, true)
+      local s2a: []string = {"b", "c"}
+      local s2 = forest:arraytoset(&s2a, #s2a, true)
+      expect.equal(2, #s1)
+      expect.equal(2, #s2)
+      expect.truthy(s1:contains("a"))
+      expect.truthy(s2:contains("c"))
+      expect.falsy(s1:contains("c"))
+      local s3 = s1:union(s2)
+      expect.equal(3, #s3)
+      local s3a: []string = {"a", "b", "c"}
+      expect.truthy(s3:setequal(forest:arraytoset(&s3a, #s3a, true)))
+    end)
+
   end)
 end)
 

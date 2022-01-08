@@ -291,6 +291,8 @@ nester.describe('wbtforest', function()
               finish - start, BB_ITERATIONS, (finish - start) / (@float64)(BB_ITERATIONS))
     io.printf("        random q: %d  inserts, %d deletes, %d qintree, %d final size\n",
               q_ins, q_del, qintree, q_ins - q_del)
+    io.printf("        Allocated nodes: %d roots: %d gcwip: %d\n",
+              #forest.nodes, #forest, #forest.gcwip)
 
 end)
 end)
