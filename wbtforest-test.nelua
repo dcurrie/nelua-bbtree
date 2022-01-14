@@ -394,10 +394,70 @@ nester.describe('wbtforest', function()
       expect.truthy(s1:contains("a"))
       expect.truthy(s2:contains("c"))
       expect.falsy(s1:contains("c"))
+      -- union
       local s3 = s1:union(s2)
       expect.equal(3, #s3)
       local s3a: []string = {"a", "b", "c"}
       expect.truthy(s3:setequal(forest:arraytoset(&s3a, #s3a, true)))
+      -- intersection
+      local s4 = s1:intersection(s2)
+      expect.equal(1, #s4)
+      expect.truthy(s4:contains("b"))
+      -- difference
+      local s5 = s1:difference(s2)
+      expect.equal(1, #s5)
+      expect.truthy(s5:contains("a"))
+      -- symmetric difference
+      local s6 = s1:symmetricdifference(s2)
+      expect.equal(2, #s6)
+      expect.truthy(s6:contains("a"))
+      expect.truthy(s6:contains("c"))
+      -- set equal
+      expect.truthy(s6:setequal(s6))
+      expect.falsy(s6:setequal(s5))
+      -- subset
+      expect.truthy(s6:issubset(s6))
+      expect.truthy(s5:issubset(s1))
+      expect.falsy(s6:issubset(s1))
+      expect.falsy(s1:issubset(s6))
+      expect.falsy(s1:issubset(s2))
+      -- proper subset
+      expect.falsy(s6:ispropersubset(s6))
+      expect.truthy(s5:ispropersubset(s1))
+      expect.falsy(s6:ispropersubset(s1))
+      expect.falsy(s1:ispropersubset(s6))
+      expect.falsy(s1:ispropersubset(s2))
+      -- disjoint
+      expect.falsy(s5:disjoint(s1))
+      expect.truthy(s5:disjoint(s4))
+    end)
+
+    nester.it('int set variations', function()
+      local forest: wbtforest(integer, boolean) <close>
+      local aa = forest:makewbtmap() -- : wbtmapT
+      for k = 1, 99 do
+         aa = aa:insert(k,true)
+      end
+      local bb = forest:makewbtmap() -- : wbtmapT
+      for k = 33, 131 do
+         bb = bb:insert(k,true)
+      end
+      local cc = aa:intersection(bb)
+      expect.equal(#cc, 67)
+      expect.equal(#(cc:difference(aa)), 0)
+      expect.equal(#(cc:difference(bb)), 0)
+      expect.equal(#(cc:union(aa)), 99)
+      expect.equal(#(cc:union(bb)), 99)
+      expect.equal(#(bb:union(aa)), 131)
+      expect.equal(#(aa:union(bb)), 131)
+      expect.equal(#(aa:difference(bb)), 32)
+      expect.equal(#(bb:difference(aa)), 32)
+      expect.equal(#(aa:symmetricdifference(bb)), 64)
+      expect.equal(#(bb:symmetricdifference(aa)), 64)
+      expect.truthy((bb:symmetricdifference(aa)):setequal(aa:symmetricdifference(bb)))
+      expect.truthy((bb:union(aa)):setequal(aa:union(bb)))
+      expect.truthy((bb:intersection(aa)):setequal(aa:intersection(bb)))
+      expect.truthy((bb:intersection(aa)):disjoint(aa:symmetricdifference(bb)))
     end)
 
   end)

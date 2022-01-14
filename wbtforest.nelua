@@ -68,8 +68,12 @@ local WBTNIL: uint32 <comptime> = (@uint32)(-1)
 
 -- Maximum load factor (used nodes per forest) in percent.
 -- The container automatically increases the number of nodes if the load factor exceeds this threshold.
+-- Can be set from command line with -DWBT_LOAD_FACTOR=xx for tuning
+## if WBT_LOAD_FACTOR and (WBT_LOAD_FACTOR > 0) and (WBT_LOAD_FACTOR < 100) then
+local MAX_LOAD_FACTOR: usize <comptime> = #[ WBT_LOAD_FACTOR ]#
+## else
 local MAX_LOAD_FACTOR: usize <comptime> = 85
-
+## end
 
 ## local function make_wbtforestT(K, V, CompareFunc, Allocator)
   ## static_assert(traits.is_type(K), "invalid type '%s'", K)

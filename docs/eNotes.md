@@ -87,3 +87,16 @@ warning: using error handling module, it is highly experimental and incomplete!
 [====] wbtforest | 1 successes / 2465.952037 seconds
 nelua-bbtree e%
 ```
+2022-01-08 tuning load factor... not much help?
+
+```
+nelua-bbtree e% ./nel -DSTRESS_TEST_N=20000 -DBB_ITERATIONS=50000 -DWBT_LOAD_FACTOR=25 wbtforest-stress.nelua
+warning: using error handling module, it is highly experimental and incomplete!
+        ................................................
+        CPU time 1165.472094 s for 50000 loops, averaging 0.023309 s per loop
+        random q: 30028  inserts, 19972 deletes, 10056 qintree, 10056 final size
+        Allocated nodes: 65536 roots: 9 gcwip: 64
+[PASS] wbtforest | stress test
+[====] wbtforest | 1 successes / 1165.472207 seconds
+nelua-bbtree e%
+```
