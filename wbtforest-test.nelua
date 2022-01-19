@@ -46,8 +46,8 @@ nester.describe('wbtforest', function()
     nester.it('API', function()
       local forest: wbtforest(integer, integer) <close>
       local wbt1 <close> = forest:makewbtmap() -- : wbtmapT
-      local wbt2 <close> = forest:makewbtmap() -- : wbtmapT
-      local wbt3 <close> = forest:makewbtmap() -- : wbtmapT
+      local wbt2         = forest:makewbtmap() -- : wbtmapT
+      local wbt3         = forest:makewbtmap() -- : wbtmapT
       wbt2 = wbt1:insert(0, 42)
       wbt2 = wbt1:delete(0)
       wbt2 = wbt1:delmax()
@@ -74,6 +74,8 @@ nester.describe('wbtforest', function()
       end
       wbt3 = wbt1:unionmerge(wbt2, merge)
       wbt3 = wbt1:intersectionmerge(wbt2, merge)
+      wbt2:destroy()
+      wbt3:destroy()
     end)
 
     nester.it('grow manual', function()
